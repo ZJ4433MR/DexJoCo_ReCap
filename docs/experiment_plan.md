@@ -58,5 +58,15 @@ default the Pistar06 value model state normalization to `MEAN_STD`. Override
 The PuSH-T value-model camera feature defaults to `observation.image`; override
 `VALUE_CAMERA_FEATURES` for datasets with different image keys.
 
+After the short comparison run, launch the small formal run with non-random value
+backbones:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -Job jobs/13_pusht_recap_formal_small.sh `
+  -RunName pusht_recap_formal_small_l40
+```
+
 This validates the algorithmic pipeline, not official pi*0.6 scale or official
 pi0.6 weights.
