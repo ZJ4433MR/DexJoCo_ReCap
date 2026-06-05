@@ -53,6 +53,8 @@ VALUE_STEPS=500
 PuSH-T does not provide `q01`/`q99` quantile stats, so the local simulation jobs
 default the Pistar06 value model state normalization to `MEAN_STD`. Override
 `VALUE_NORMALIZATION_MAPPING` for datasets that include quantile stats.
+The PuSH-T value-model camera feature defaults to `observation.image`; override
+`VALUE_CAMERA_FEATURES` for datasets with different image keys.
 
 This validates the algorithmic pipeline, not official pi*0.6 scale or official
 pi0.6 weights.

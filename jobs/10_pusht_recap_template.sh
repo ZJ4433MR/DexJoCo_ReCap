@@ -15,6 +15,7 @@ VALUE_STEPS="${VALUE_STEPS:-4000}"
 VALUE_BATCH_SIZE="${VALUE_BATCH_SIZE:-16}"
 VALUE_LANGUAGE_REPO="${VALUE_LANGUAGE_REPO:-Qwen/Qwen2.5-0.5B}"
 VALUE_NORMALIZATION_MAPPING="${VALUE_NORMALIZATION_MAPPING:-{VISUAL: IDENTITY, STATE: MEAN_STD, ACTION: IDENTITY}}"
+VALUE_CAMERA_FEATURES="${VALUE_CAMERA_FEATURES:-[observation.image]}"
 
 BASELINE_DIR="$OUTPUT_DIR/baseline_${TAG}"
 VALUE_DIR="$OUTPUT_DIR/value_${TAG}"
@@ -46,6 +47,7 @@ python -m lerobot.scripts.lerobot_value_train \
   --value.dtype=bfloat16 \
   --value.language_repo_id="$VALUE_LANGUAGE_REPO" \
   --value.normalization_mapping="$VALUE_NORMALIZATION_MAPPING" \
+  --value.camera_features="$VALUE_CAMERA_FEATURES" \
   --value.device=cuda \
   --value.push_to_hub=false \
   --batch_size="$VALUE_BATCH_SIZE" \
