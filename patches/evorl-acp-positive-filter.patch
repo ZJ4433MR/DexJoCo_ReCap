@@ -7,11 +7,16 @@ diff --git a/src/lerobot/configs/train.py b/src/lerobot/configs/train.py
      indicator_field: str = "complementary_info.acp_indicator"
      indicator_dropout_prob: float = 0.0
 +    filter_positive: bool = False
++    positive_sample_weight: float = 1.0
 @@
          if self.acp.enable and not self.acp.indicator_field:
              raise ValueError("'acp.indicator_field' must be set when 'acp.enable=true'.")
 +        if self.acp.filter_positive and not self.acp.enable:
 +            raise ValueError("'acp.filter_positive=true' requires 'acp.enable=true'.")
++        if self.acp.positive_sample_weight <= 0.0:
++            raise ValueError("'acp.positive_sample_weight' must be positive.")
++        if self.acp.positive_sample_weight != 1.0 and not self.acp.enable:
++            raise ValueError("'acp.positive_sample_weight != 1.0' requires 'acp.enable=true'.")
 diff --git a/src/lerobot/scripts/lerobot_train.py b/src/lerobot/scripts/lerobot_train.py
 --- a/src/lerobot/scripts/lerobot_train.py
 +++ b/src/lerobot/scripts/lerobot_train.py
@@ -94,10 +99,62 @@ diff --git a/src/lerobot/scripts/lerobot_train.py b/src/lerobot/scripts/lerobot_
 +    return positive_indices
 +
 +
++def _get_acp_sample_weights(
++    dataset: Any,
++    indicator_field: str,
++    positive_sample_weight: float,
++    drop_n_last_frames: int = 0,
++) -> tuple[torch.Tensor, int, int]:
++    """Return per-row sampling weights that upweight ACP-positive rows."""
++
++    hf_dataset = _load_hf_dataset_for_sampling(dataset)
++    column_names = getattr(hf_dataset, "column_names", None)
++    if column_names is not None and indicator_field not in column_names:
++        raise KeyError(f"ACP indicator field '{indicator_field}' is not present in the dataset.")
++
++    indicator_values = hf_dataset[indicator_field]
++    absolute_indices = hf_dataset["index"] if column_names is None or "index" in column_names else None
++    allowed_absolute_indices = _allowed_absolute_indices_for_policy(dataset, drop_n_last_frames)
++
++    weights = torch.ones(len(indicator_values), dtype=torch.double)
++    positive_count = 0
++    eligible_count = 0
++    invalid_count = 0
++    for row_idx, value in enumerate(indicator_values):
++        if allowed_absolute_indices is not None and absolute_indices is not None:
++            abs_idx = int(torch.as_tensor(absolute_indices[row_idx]).reshape(-1)[0].item())
++            if abs_idx not in allowed_absolute_indices:
++                weights[row_idx] = 0.0
++                continue
++
++        eligible_count += 1
++        values = torch.as_tensor(value).reshape(-1)
++        if values.numel() == 0:
++            invalid_count += 1
++            continue
++        invalid_count += int((~((values == 0) | (values == 1))).sum().item())
++        if bool((values == 1).any().item()):
++            weights[row_idx] = positive_sample_weight
++            positive_count += 1
++
++    if invalid_count > 0:
++        logging.warning(
++            "ACP weighted sampling saw %d non-binary or empty indicator values in field '%s'.",
++            invalid_count,
++            indicator_field,
++        )
++    if eligible_count == 0 or float(weights.sum().item()) <= 0.0:
++        raise ValueError(
++            f"ACP weighted sampling found no eligible samples for field '{indicator_field}'."
++        )
++    return weights, positive_count, eligible_count
++
++
  def update_policy(
 @@
 -    if hasattr(cfg.policy, "drop_n_last_frames"):
 +    acp_positive_sample_indices = None
++    acp_sample_weights = None
 +    if cfg.acp.enable and cfg.acp.filter_positive:
 +        if cfg.dataset.streaming:
 +            raise ValueError("ACP positive filtering is not supported with streaming datasets.")
@@ -114,10 +171,35 @@ diff --git a/src/lerobot/scripts/lerobot_train.py b/src/lerobot/scripts/lerobot_
 +                dataset.num_frames,
 +                cfg.acp.indicator_field,
 +            )
++    elif cfg.acp.enable and cfg.acp.positive_sample_weight != 1.0:
++        if cfg.dataset.streaming:
++            raise ValueError("ACP weighted sampling is not supported with streaming datasets.")
++        drop_n_last_frames = getattr(cfg.policy, "drop_n_last_frames", 0)
++        acp_sample_weights, positive_count, eligible_count = _get_acp_sample_weights(
++            dataset,
++            cfg.acp.indicator_field,
++            cfg.acp.positive_sample_weight,
++            drop_n_last_frames=drop_n_last_frames,
++        )
++        if is_main_process:
++            logging.info(
++                "ACP weighted sampling enabled: positive_weight=%.3f positive=%d eligible=%d rows from field '%s'.",
++                cfg.acp.positive_sample_weight,
++                positive_count,
++                eligible_count,
++                cfg.acp.indicator_field,
++            )
 +
 +    if acp_positive_sample_indices is not None:
 +        shuffle = False
 +        sampler = torch.utils.data.SubsetRandomSampler(acp_positive_sample_indices)
++    elif acp_sample_weights is not None:
++        shuffle = False
++        sampler = torch.utils.data.WeightedRandomSampler(
++            acp_sample_weights,
++            num_samples=dataset.num_frames,
++            replacement=True,
++        )
 +    elif hasattr(cfg.policy, "drop_n_last_frames"):
          shuffle = False
          sampler = EpisodeAwareSampler(

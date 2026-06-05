@@ -13,6 +13,7 @@ TAG="${TAG:-pusht_recap_pilot}"
 POLICY_TYPE="${POLICY_TYPE:-act}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 POLICY_STEPS="${POLICY_STEPS:-20}"
+RECAP_POLICY_STEPS="${RECAP_POLICY_STEPS:-$POLICY_STEPS}"
 VALUE_STEPS="${VALUE_STEPS:-8}"
 VALUE_BATCH_SIZE="${VALUE_BATCH_SIZE:-2}"
 VALUE_VISION_REPO="${VALUE_VISION_REPO:-hf-internal-testing/tiny-random-vit}"
@@ -24,6 +25,8 @@ VALUE_LOG_FREQ="${VALUE_LOG_FREQ:-2}"
 DIFFUSION_NUM_INFERENCE_STEPS="${DIFFUSION_NUM_INFERENCE_STEPS:-20}"
 RECAP_FILTER_POSITIVE="${RECAP_FILTER_POSITIVE:-false}"
 RECAP_INDICATOR_DROPOUT_PROB="${RECAP_INDICATOR_DROPOUT_PROB:-0.3}"
+RECAP_POSITIVE_SAMPLE_WEIGHT="${RECAP_POSITIVE_SAMPLE_WEIGHT:-1.0}"
+RECAP_INIT_FROM_BASELINE="${RECAP_INIT_FROM_BASELINE:-false}"
 RUN_EVAL="${RUN_EVAL:-false}"
 EVAL_EPISODES="${EVAL_EPISODES:-10}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-5}"
@@ -144,6 +147,7 @@ echo "[job] Dataset: $DATASET_REPO"
 echo "[job] Episodes: $DATASET_EPISODES"
 echo "[job] Policy type: $POLICY_TYPE"
 echo "[job] Policy steps: $POLICY_STEPS"
+echo "[job] RECAP policy steps: $RECAP_POLICY_STEPS"
 echo "[job] Value steps: $VALUE_STEPS"
 echo "[job] Tiny value vision repo: $VALUE_VISION_REPO"
 echo "[job] Tiny value language repo: $VALUE_LANGUAGE_REPO"
@@ -153,6 +157,8 @@ echo "[job] Policy log frequency: $POLICY_LOG_FREQ"
 echo "[job] Value log frequency: $VALUE_LOG_FREQ"
 echo "[job] Diffusion inference steps: $DIFFUSION_NUM_INFERENCE_STEPS"
 echo "[job] RECAP filter positive: $RECAP_FILTER_POSITIVE"
+echo "[job] RECAP positive sample weight: $RECAP_POSITIVE_SAMPLE_WEIGHT"
+echo "[job] RECAP init from baseline: $RECAP_INIT_FROM_BASELINE"
 echo "[job] Run eval: $RUN_EVAL"
 echo "[job] Eval episodes: $EVAL_EPISODES"
 echo "[job] Eval batch size: $EVAL_BATCH_SIZE"
@@ -209,6 +215,10 @@ RECAP_ACP_ARGS=(
 
 if [[ "$RECAP_FILTER_POSITIVE" == "true" ]]; then
   RECAP_ACP_ARGS+=(--acp.filter_positive=true)
+fi
+
+if [[ "$RECAP_POSITIVE_SAMPLE_WEIGHT" != "1.0" && "$RECAP_POSITIVE_SAMPLE_WEIGHT" != "1" ]]; then
+  RECAP_ACP_ARGS+=(--acp.positive_sample_weight="$RECAP_POSITIVE_SAMPLE_WEIGHT")
 fi
 
 echo "[job] 1/4 Train BC baseline"
@@ -269,16 +279,26 @@ python -m lerobot.scripts.lerobot_value_infer \
   --job_name="infer_${TAG}"
 
 echo "[job] 4/4 Train advantage-conditioned policy"
+if [[ "$RECAP_INIT_FROM_BASELINE" == "true" ]]; then
+  RECAP_POLICY_ARGS=(
+    --policy.path="$BASELINE_DIR/checkpoints/last/pretrained_model"
+    --policy.device=cuda
+    --policy.push_to_hub=false
+  )
+else
+  RECAP_POLICY_ARGS=("${POLICY_ARGS[@]}")
+fi
+
 python -m lerobot.scripts.lerobot_train \
   "${TRAIN_DATASET_ARGS[@]}" \
-  "${POLICY_ARGS[@]}" \
+  "${RECAP_POLICY_ARGS[@]}" \
   --batch_size="$BATCH_SIZE" \
-  --steps="$POLICY_STEPS" \
+  --steps="$RECAP_POLICY_STEPS" \
   --log_freq="$POLICY_LOG_FREQ" \
   --eval_freq=0 \
   "${RECAP_ACP_ARGS[@]}" \
   --save_checkpoint=true \
-  --save_freq="$POLICY_STEPS" \
+  --save_freq="$RECAP_POLICY_STEPS" \
   --wandb.enable=false \
   --output_dir="$RECAP_DIR" \
   --job_name="recap_${TAG}"
