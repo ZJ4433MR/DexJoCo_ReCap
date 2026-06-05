@@ -19,6 +19,9 @@ VALUE_VISION_REPO="${VALUE_VISION_REPO:-hf-internal-testing/tiny-random-vit}"
 VALUE_LANGUAGE_REPO="${VALUE_LANGUAGE_REPO:-hf-internal-testing/tiny-random-bert}"
 VALUE_NORMALIZATION_MAPPING="${VALUE_NORMALIZATION_MAPPING:-{VISUAL: IDENTITY, STATE: MEAN_STD, ACTION: IDENTITY}}"
 VALUE_CAMERA_FEATURES="${VALUE_CAMERA_FEATURES:-[observation.image]}"
+DIFFUSION_NUM_INFERENCE_STEPS="${DIFFUSION_NUM_INFERENCE_STEPS:-20}"
+RECAP_FILTER_POSITIVE="${RECAP_FILTER_POSITIVE:-false}"
+RECAP_INDICATOR_DROPOUT_PROB="${RECAP_INDICATOR_DROPOUT_PROB:-0.3}"
 RUN_EVAL="${RUN_EVAL:-false}"
 EVAL_EPISODES="${EVAL_EPISODES:-10}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-5}"
@@ -144,6 +147,8 @@ echo "[job] Tiny value vision repo: $VALUE_VISION_REPO"
 echo "[job] Tiny value language repo: $VALUE_LANGUAGE_REPO"
 echo "[job] Value normalization mapping: $VALUE_NORMALIZATION_MAPPING"
 echo "[job] Value camera features: $VALUE_CAMERA_FEATURES"
+echo "[job] Diffusion inference steps: $DIFFUSION_NUM_INFERENCE_STEPS"
+echo "[job] RECAP filter positive: $RECAP_FILTER_POSITIVE"
 echo "[job] Run eval: $RUN_EVAL"
 echo "[job] Eval episodes: $EVAL_EPISODES"
 echo "[job] Eval batch size: $EVAL_BATCH_SIZE"
@@ -160,21 +165,52 @@ INFER_DATASET_ARGS=(
   --dataset.download_videos=true
 )
 
+POLICY_ARGS=(
+  --policy.type="$POLICY_TYPE"
+  --policy.device=cuda
+  --policy.push_to_hub=false
+)
+
+case "$POLICY_TYPE" in
+  act)
+    POLICY_ARGS+=(
+      --policy.pretrained_backbone_weights=null
+      --policy.chunk_size=10
+      --policy.n_action_steps=10
+      --policy.dim_model=128
+      --policy.n_heads=4
+      --policy.dim_feedforward=512
+      --policy.n_encoder_layers=1
+      --policy.n_vae_encoder_layers=1
+      --policy.latent_dim=16
+    )
+    ;;
+  diffusion)
+    POLICY_ARGS+=(
+      --policy.pretrained_backbone_weights=null
+      --policy.num_inference_steps="$DIFFUSION_NUM_INFERENCE_STEPS"
+    )
+    ;;
+  *)
+    echo "[job] Unsupported POLICY_TYPE='$POLICY_TYPE'. Add policy-specific args in jobs/11_pusht_recap_pilot.sh." >&2
+    exit 2
+    ;;
+esac
+
+RECAP_ACP_ARGS=(
+  --acp.enable=true
+  --acp.indicator_field="complementary_info.acp_indicator_${TAG}"
+  --acp.indicator_dropout_prob="$RECAP_INDICATOR_DROPOUT_PROB"
+)
+
+if [[ "$RECAP_FILTER_POSITIVE" == "true" ]]; then
+  RECAP_ACP_ARGS+=(--acp.filter_positive=true)
+fi
+
 echo "[job] 1/4 Train BC baseline"
 python -m lerobot.scripts.lerobot_train \
   "${TRAIN_DATASET_ARGS[@]}" \
-  --policy.type="$POLICY_TYPE" \
-  --policy.device=cuda \
-  --policy.push_to_hub=false \
-  --policy.pretrained_backbone_weights=null \
-  --policy.chunk_size=10 \
-  --policy.n_action_steps=10 \
-  --policy.dim_model=128 \
-  --policy.n_heads=4 \
-  --policy.dim_feedforward=512 \
-  --policy.n_encoder_layers=1 \
-  --policy.n_vae_encoder_layers=1 \
-  --policy.latent_dim=16 \
+  "${POLICY_ARGS[@]}" \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
   --log_freq=5 \
@@ -231,25 +267,12 @@ python -m lerobot.scripts.lerobot_value_infer \
 echo "[job] 4/4 Train advantage-conditioned policy"
 python -m lerobot.scripts.lerobot_train \
   "${TRAIN_DATASET_ARGS[@]}" \
-  --policy.type="$POLICY_TYPE" \
-  --policy.device=cuda \
-  --policy.push_to_hub=false \
-  --policy.pretrained_backbone_weights=null \
-  --policy.chunk_size=10 \
-  --policy.n_action_steps=10 \
-  --policy.dim_model=128 \
-  --policy.n_heads=4 \
-  --policy.dim_feedforward=512 \
-  --policy.n_encoder_layers=1 \
-  --policy.n_vae_encoder_layers=1 \
-  --policy.latent_dim=16 \
+  "${POLICY_ARGS[@]}" \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
   --log_freq=5 \
   --eval_freq=0 \
-  --acp.enable=true \
-  --acp.indicator_field="complementary_info.acp_indicator_${TAG}" \
-  --acp.indicator_dropout_prob=0.3 \
+  "${RECAP_ACP_ARGS[@]}" \
   --save_checkpoint=true \
   --save_freq="$POLICY_STEPS" \
   --wandb.enable=false \

@@ -29,5 +29,16 @@ failing on missing or mismatched weights:
 patches/evorl-pistar06-allow-automodel-heads.patch
 ```
 
-The current local Evo-RL source tree has already been patched with both source
-patches.
+For the PuSH-T diffusion comparison, the original ACP/ReCap hook only changes
+the string `task` prompt. ACT and diffusion policies do not consume that prompt,
+so ACP would not affect policy learning. This patch adds
+`--acp.filter_positive=true`, which makes the ReCap branch sample only rows
+whose ACP indicator is positive while preserving the original dataset indexing
+needed for temporal action windows:
+
+```text
+patches/evorl-acp-positive-filter.patch
+```
+
+The current local Evo-RL source tree has already been patched with all source
+patches listed above.
