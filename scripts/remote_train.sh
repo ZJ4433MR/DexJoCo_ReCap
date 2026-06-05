@@ -97,6 +97,6 @@ cp "$LOG_DIR/system.log" "$RESULTS_DIR/system.log"
 cp "$LOG_DIR/job.log" "$RESULTS_DIR/job.log"
 
 echo "[remote] packing export: $EXPORT_PATH"
-tar -czf "$EXPORT_PATH" -C "$RESULTS_DIR" .
+tar -czhf "$EXPORT_PATH" -C "$RESULTS_DIR" .
 
 exit "$JOB_STATUS"
