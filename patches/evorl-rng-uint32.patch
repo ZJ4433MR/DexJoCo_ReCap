@@ -1,0 +1,20 @@
+diff --git a/src/lerobot/utils/random_utils.py b/src/lerobot/utils/random_utils.py
+--- a/src/lerobot/utils/random_utils.py
++++ b/src/lerobot/utils/random_utils.py
+@@
+     # Ensure no breaking changes from numpy
+     assert np_state[0] == "MT19937"
+     return {
+-        "np_rng_state_values": torch.tensor(np_state[1], dtype=torch.int64),
++        "np_rng_state_values": torch.tensor(np_state[1].astype(np.int64), dtype=torch.int64),
+         "np_rng_state_index": torch.tensor([np_state[2]], dtype=torch.int64),
+         "np_rng_has_gauss": torch.tensor([np_state[3]], dtype=torch.int64),
+         "np_rng_cached_gaussian": torch.tensor([np_state[4]], dtype=torch.float32),
+@@
+     np_state = (
+         "MT19937",
+-        rng_state_dict["np_rng_state_values"].numpy(),
++        rng_state_dict["np_rng_state_values"].numpy().astype(np.uint32),
+         rng_state_dict["np_rng_state_index"].item(),
+         rng_state_dict["np_rng_has_gauss"].item(),
+         rng_state_dict["np_rng_cached_gaussian"].item(),
