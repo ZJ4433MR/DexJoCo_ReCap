@@ -153,6 +153,7 @@ python -m lerobot.scripts.lerobot_train \
   "${TRAIN_DATASET_ARGS[@]}" \
   --policy.type="$POLICY_TYPE" \
   --policy.device=cuda \
+  --policy.push_to_hub=false \
   --policy.pretrained_backbone_weights=null \
   --policy.chunk_size=10 \
   --policy.n_action_steps=10 \
@@ -180,6 +181,7 @@ python -m lerobot.scripts.lerobot_value_train \
   --value.vision_repo_id="$VALUE_VISION_REPO" \
   --value.language_repo_id="$VALUE_LANGUAGE_REPO" \
   --value.device=cuda \
+  --value.push_to_hub=false \
   --value.tokenizer_max_length=64 \
   --value.state_proj_dim=64 \
   --value.fusion_hidden_dim=64 \
@@ -217,6 +219,7 @@ python -m lerobot.scripts.lerobot_train \
   "${TRAIN_DATASET_ARGS[@]}" \
   --policy.type="$POLICY_TYPE" \
   --policy.device=cuda \
+  --policy.push_to_hub=false \
   --policy.pretrained_backbone_weights=null \
   --policy.chunk_size=10 \
   --policy.n_action_steps=10 \

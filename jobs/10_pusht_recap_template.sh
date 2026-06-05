@@ -28,6 +28,7 @@ python -m lerobot.scripts.lerobot_train \
   --dataset.repo_id="$DATASET_REPO" \
   --policy.type="$POLICY_TYPE" \
   --policy.device=cuda \
+  --policy.push_to_hub=false \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
   --eval_freq=0 \
@@ -44,6 +45,7 @@ python -m lerobot.scripts.lerobot_value_train \
   --value.dtype=bfloat16 \
   --value.language_repo_id="$VALUE_LANGUAGE_REPO" \
   --value.device=cuda \
+  --value.push_to_hub=false \
   --batch_size="$VALUE_BATCH_SIZE" \
   --steps="$VALUE_STEPS" \
   --save_checkpoint=true \
@@ -72,6 +74,7 @@ python -m lerobot.scripts.lerobot_train \
   --dataset.repo_id="$DATASET_REPO" \
   --policy.type="$POLICY_TYPE" \
   --policy.device=cuda \
+  --policy.push_to_hub=false \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
   --eval_freq=0 \
