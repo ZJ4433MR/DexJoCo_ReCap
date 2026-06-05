@@ -35,7 +35,7 @@ Run `jobs/00_remote_smoke.sh` on L40 and confirm:
 Run a small PushT template experiment with reduced steps:
 
 ```powershell
-.\scripts\run_remote_l40.ps1 `
+.\scripts\run_remote_l40_slurm.ps1 `
   -ConfigPath configs\remote-l40.env `
   -Job jobs/10_pusht_recap_template.sh `
   -RunName pusht_recap_small
@@ -50,4 +50,9 @@ VALUE_STEPS=500
 
 ## Notes
 
-This validates the algorithmic pipeline, not official π*0.6 scale or official π0.6 weights.
+PuSH-T does not provide `q01`/`q99` quantile stats, so the local simulation jobs
+default the Pistar06 value model state normalization to `MEAN_STD`. Override
+`VALUE_NORMALIZATION_MAPPING` for datasets that include quantile stats.
+
+This validates the algorithmic pipeline, not official pi*0.6 scale or official
+pi0.6 weights.

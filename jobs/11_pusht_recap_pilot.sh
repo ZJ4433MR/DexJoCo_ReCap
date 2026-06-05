@@ -17,6 +17,7 @@ VALUE_STEPS="${VALUE_STEPS:-8}"
 VALUE_BATCH_SIZE="${VALUE_BATCH_SIZE:-2}"
 VALUE_VISION_REPO="${VALUE_VISION_REPO:-hf-internal-testing/tiny-random-vit}"
 VALUE_LANGUAGE_REPO="${VALUE_LANGUAGE_REPO:-hf-internal-testing/tiny-random-bert}"
+VALUE_NORMALIZATION_MAPPING="${VALUE_NORMALIZATION_MAPPING:-{VISUAL: IDENTITY, STATE: MEAN_STD, ACTION: IDENTITY}}"
 
 BASELINE_DIR="$OUTPUT_DIR/baseline_${TAG}"
 VALUE_DIR="$OUTPUT_DIR/value_${TAG}"
@@ -135,6 +136,7 @@ echo "[job] Policy steps: $POLICY_STEPS"
 echo "[job] Value steps: $VALUE_STEPS"
 echo "[job] Tiny value vision repo: $VALUE_VISION_REPO"
 echo "[job] Tiny value language repo: $VALUE_LANGUAGE_REPO"
+echo "[job] Value normalization mapping: $VALUE_NORMALIZATION_MAPPING"
 
 TRAIN_DATASET_ARGS=(
   --dataset.repo_id="$DATASET_REPO"
@@ -180,6 +182,7 @@ python -m lerobot.scripts.lerobot_value_train \
   --value.dtype=float32 \
   --value.vision_repo_id="$VALUE_VISION_REPO" \
   --value.language_repo_id="$VALUE_LANGUAGE_REPO" \
+  --value.normalization_mapping="$VALUE_NORMALIZATION_MAPPING" \
   --value.device=cuda \
   --value.push_to_hub=false \
   --value.tokenizer_max_length=64 \
