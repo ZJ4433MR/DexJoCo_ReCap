@@ -68,7 +68,7 @@ REMOTE_ENV_SETUP=source ~/miniconda3/etc/profile.d/conda.sh && conda activate ev
 
 `configs/remote-l40.env` 被 `.gitignore` 忽略，可以放本地私有信息。
 
-## 先跑 smoke test
+## Slurm L40: 先跑 smoke test
 
 这个命令会：
 
@@ -80,7 +80,7 @@ REMOTE_ENV_SETUP=source ~/miniconda3/etc/profile.d/conda.sh && conda activate ev
 6. 清理远程临时目录。
 
 ```powershell
-.\scripts\run_remote_l40.ps1 `
+.\scripts\run_remote_l40_slurm.ps1 `
   -ConfigPath configs\remote-l40.env `
   -Job jobs/00_remote_smoke.sh `
   -RunName smoke_l40
@@ -120,7 +120,7 @@ jobs/10_pusht_recap_template.sh
 运行示例：
 
 ```powershell
-.\scripts\run_remote_l40.ps1 `
+.\scripts\run_remote_l40_slurm.ps1 `
   -ConfigPath configs\remote-l40.env `
   -Job jobs/10_pusht_recap_template.sh `
   -RunName pusht_recap_act_l40
@@ -159,7 +159,7 @@ runs/<run_name>/
 调试时可以加 `-KeepRemote`：
 
 ```powershell
-.\scripts\run_remote_l40.ps1 -ConfigPath configs\remote-l40.env -Job jobs/00_remote_smoke.sh -RunName debug_l40 -KeepRemote
+.\scripts\run_remote_l40_slurm.ps1 -ConfigPath configs\remote-l40.env -Job jobs/00_remote_smoke.sh -RunName debug_l40 -KeepRemote
 ```
 
 调试完成后记得手动清理远程临时目录。

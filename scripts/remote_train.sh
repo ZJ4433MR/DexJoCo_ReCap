@@ -41,14 +41,15 @@ tar -xzf "$ARCHIVE_PATH" -C "$WORK_DIR"
 export EVORL_DIR="$WORK_DIR/Evo-RL-main"
 export EXP_DIR="$WORK_DIR/recap-sim-l40"
 export OUTPUT_DIR="$RESULTS_DIR/outputs"
+export PYDEPS_DIR="$RUN_DIR/pydeps"
 export HF_HOME="$RUN_DIR/hf_home"
 export HF_DATASETS_CACHE="$RUN_DIR/hf_datasets"
 export TRANSFORMERS_CACHE="$RUN_DIR/transformers"
 export PIP_CACHE_DIR="$RUN_DIR/pip_cache"
 export WANDB_DIR="$RESULTS_DIR/wandb"
-export PYTHONPATH="$EVORL_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$PYDEPS_DIR:$EVORL_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
-mkdir -p "$OUTPUT_DIR" "$HF_HOME" "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$WANDB_DIR"
+mkdir -p "$OUTPUT_DIR" "$PYDEPS_DIR" "$HF_HOME" "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$WANDB_DIR"
 
 if [[ -n "$HF_TOKEN" ]]; then
   export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
