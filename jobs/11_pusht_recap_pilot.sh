@@ -19,6 +19,8 @@ VALUE_VISION_REPO="${VALUE_VISION_REPO:-hf-internal-testing/tiny-random-vit}"
 VALUE_LANGUAGE_REPO="${VALUE_LANGUAGE_REPO:-hf-internal-testing/tiny-random-bert}"
 VALUE_NORMALIZATION_MAPPING="${VALUE_NORMALIZATION_MAPPING:-{VISUAL: IDENTITY, STATE: MEAN_STD, ACTION: IDENTITY}}"
 VALUE_CAMERA_FEATURES="${VALUE_CAMERA_FEATURES:-[observation.image]}"
+POLICY_LOG_FREQ="${POLICY_LOG_FREQ:-5}"
+VALUE_LOG_FREQ="${VALUE_LOG_FREQ:-2}"
 DIFFUSION_NUM_INFERENCE_STEPS="${DIFFUSION_NUM_INFERENCE_STEPS:-20}"
 RECAP_FILTER_POSITIVE="${RECAP_FILTER_POSITIVE:-false}"
 RECAP_INDICATOR_DROPOUT_PROB="${RECAP_INDICATOR_DROPOUT_PROB:-0.3}"
@@ -147,6 +149,8 @@ echo "[job] Tiny value vision repo: $VALUE_VISION_REPO"
 echo "[job] Tiny value language repo: $VALUE_LANGUAGE_REPO"
 echo "[job] Value normalization mapping: $VALUE_NORMALIZATION_MAPPING"
 echo "[job] Value camera features: $VALUE_CAMERA_FEATURES"
+echo "[job] Policy log frequency: $POLICY_LOG_FREQ"
+echo "[job] Value log frequency: $VALUE_LOG_FREQ"
 echo "[job] Diffusion inference steps: $DIFFUSION_NUM_INFERENCE_STEPS"
 echo "[job] RECAP filter positive: $RECAP_FILTER_POSITIVE"
 echo "[job] Run eval: $RUN_EVAL"
@@ -213,7 +217,7 @@ python -m lerobot.scripts.lerobot_train \
   "${POLICY_ARGS[@]}" \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
-  --log_freq=5 \
+  --log_freq="$POLICY_LOG_FREQ" \
   --eval_freq=0 \
   --save_checkpoint=true \
   --save_freq="$POLICY_STEPS" \
@@ -241,7 +245,7 @@ python -m lerobot.scripts.lerobot_value_train \
   --value.scheduler_decay_steps="$VALUE_STEPS" \
   --batch_size="$VALUE_BATCH_SIZE" \
   --steps="$VALUE_STEPS" \
-  --log_freq=2 \
+  --log_freq="$VALUE_LOG_FREQ" \
   --save_checkpoint=true \
   --save_freq="$VALUE_STEPS" \
   --wandb.enable=false \
@@ -270,7 +274,7 @@ python -m lerobot.scripts.lerobot_train \
   "${POLICY_ARGS[@]}" \
   --batch_size="$BATCH_SIZE" \
   --steps="$POLICY_STEPS" \
-  --log_freq=5 \
+  --log_freq="$POLICY_LOG_FREQ" \
   --eval_freq=0 \
   "${RECAP_ACP_ARGS[@]}" \
   --save_checkpoint=true \
