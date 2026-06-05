@@ -17,4 +17,17 @@ Apply this patch to the Evo-RL source tree before running checkpointed jobs:
 patches/evorl-rng-uint32.patch
 ```
 
-The current local Evo-RL source tree has already been patched.
+The value-model pilot also uses a tiny BERT checkpoint as the language
+backbone. Some tiny Hugging Face test checkpoints include task-head weights
+that are reported as `unexpected_keys` when loaded through `AutoModel`. Evo-RL's
+strict loading check treats that as a failure even when the backbone has no
+missing or mismatched weights. For the simulation pilot, apply this patch to
+allow unexpected-only keys for the `AutoModel` language backbone while still
+failing on missing or mismatched weights:
+
+```text
+patches/evorl-pistar06-allow-automodel-heads.patch
+```
+
+The current local Evo-RL source tree has already been patched with both source
+patches.
