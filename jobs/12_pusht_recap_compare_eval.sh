@@ -17,4 +17,5 @@ export RUN_EVAL="${RUN_EVAL:-true}"
 export EVAL_EPISODES="${EVAL_EPISODES:-20}"
 export EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-10}"
 
-bash "$EXPERIMENT_DIR/jobs/11_pusht_recap_pilot.sh"
+EXP_ROOT="${EXP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+bash "$EXP_ROOT/jobs/11_pusht_recap_pilot.sh"
