@@ -19,11 +19,16 @@ VALUE_VISION_REPO="${VALUE_VISION_REPO:-hf-internal-testing/tiny-random-vit}"
 VALUE_LANGUAGE_REPO="${VALUE_LANGUAGE_REPO:-hf-internal-testing/tiny-random-bert}"
 VALUE_NORMALIZATION_MAPPING="${VALUE_NORMALIZATION_MAPPING:-{VISUAL: IDENTITY, STATE: MEAN_STD, ACTION: IDENTITY}}"
 VALUE_CAMERA_FEATURES="${VALUE_CAMERA_FEATURES:-[observation.image]}"
+RUN_EVAL="${RUN_EVAL:-false}"
+EVAL_EPISODES="${EVAL_EPISODES:-10}"
+EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-5}"
 
 BASELINE_DIR="$OUTPUT_DIR/baseline_${TAG}"
 VALUE_DIR="$OUTPUT_DIR/value_${TAG}"
 INFER_DIR="$OUTPUT_DIR/value_infer_${TAG}"
 RECAP_DIR="$OUTPUT_DIR/recap_${TAG}"
+BASELINE_EVAL_DIR="$OUTPUT_DIR/eval_baseline_${TAG}"
+RECAP_EVAL_DIR="$OUTPUT_DIR/eval_recap_${TAG}"
 
 echo "[job] Installing pilot dependencies into temporary PYDEPS_DIR=$PYDEPS_DIR"
 python - <<'PY'
@@ -139,6 +144,9 @@ echo "[job] Tiny value vision repo: $VALUE_VISION_REPO"
 echo "[job] Tiny value language repo: $VALUE_LANGUAGE_REPO"
 echo "[job] Value normalization mapping: $VALUE_NORMALIZATION_MAPPING"
 echo "[job] Value camera features: $VALUE_CAMERA_FEATURES"
+echo "[job] Run eval: $RUN_EVAL"
+echo "[job] Eval episodes: $EVAL_EPISODES"
+echo "[job] Eval batch size: $EVAL_BATCH_SIZE"
 
 TRAIN_DATASET_ARGS=(
   --dataset.repo_id="$DATASET_REPO"
@@ -247,5 +255,29 @@ python -m lerobot.scripts.lerobot_train \
   --wandb.enable=false \
   --output_dir="$RECAP_DIR" \
   --job_name="recap_${TAG}"
+
+if [[ "$RUN_EVAL" == "true" ]]; then
+  echo "[job] 5/6 Evaluate BC baseline"
+  python -m lerobot.scripts.lerobot_eval \
+    --policy.path="$BASELINE_DIR/checkpoints/last/pretrained_model" \
+    --env.type=pusht \
+    --eval.batch_size="$EVAL_BATCH_SIZE" \
+    --eval.n_episodes="$EVAL_EPISODES" \
+    --policy.device=cuda \
+    --policy.use_amp=false \
+    --output_dir="$BASELINE_EVAL_DIR" \
+    --job_name="eval_baseline_${TAG}"
+
+  echo "[job] 6/6 Evaluate RECAP/ACP policy"
+  python -m lerobot.scripts.lerobot_eval \
+    --policy.path="$RECAP_DIR/checkpoints/last/pretrained_model" \
+    --env.type=pusht \
+    --eval.batch_size="$EVAL_BATCH_SIZE" \
+    --eval.n_episodes="$EVAL_EPISODES" \
+    --policy.device=cuda \
+    --policy.use_amp=false \
+    --output_dir="$RECAP_EVAL_DIR" \
+    --job_name="eval_recap_${TAG}"
+fi
 
 echo "[job] Pilot RECAP simulation finished"

@@ -32,20 +32,22 @@ Run `jobs/00_remote_smoke.sh` on L40 and confirm:
 
 ## Second milestone
 
-Run a small PushT template experiment with reduced steps:
+Run a small PuSH-T BC vs RECAP/ACP comparison with simulation eval:
 
 ```powershell
 .\scripts\run_remote_l40_slurm.ps1 `
   -ConfigPath configs\remote-l40.env `
-  -Job jobs/10_pusht_recap_template.sh `
-  -RunName pusht_recap_small
+  -Job jobs/12_pusht_recap_compare_eval.sh `
+  -RunName pusht_recap_compare_eval_l40
 ```
 
-Before launching, reduce steps in `jobs/10_pusht_recap_template.sh` if needed:
+Default comparison settings:
 
 ```bash
+DATASET_EPISODES=[0,1,2,3,4,5,6,7,8,9]
 POLICY_STEPS=1000
-VALUE_STEPS=500
+VALUE_STEPS=300
+EVAL_EPISODES=20
 ```
 
 ## Notes
