@@ -108,29 +108,20 @@ if missing_top:
         ]
     )
 
-missing_deps = []
-for spec in deps:
-    module = spec.split("==", 1)[0].split(">=", 1)[0].split("<", 1)[0].split("[", 1)[0].replace("-", "_")
-    if importlib.util.find_spec(module) is None:
-        missing_deps.append(spec)
-
-if missing_deps:
-    print("installing dependency packages:", missing_deps)
-    subprocess.check_call(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--target",
-            target,
-            "-i",
-            index_url,
-            *missing_deps,
-        ]
-    )
-else:
-    print("all pilot dependencies are already importable")
+print("installing dependency packages:", deps)
+subprocess.check_call(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--target",
+        target,
+        "-i",
+        index_url,
+        *deps,
+    ]
+)
 PY
 
 echo "[job] Dataset: $DATASET_REPO"
