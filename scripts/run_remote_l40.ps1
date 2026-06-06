@@ -69,7 +69,7 @@ if ($RoboCode -ge 8) {
 }
 
 Write-Host "[local] Packing experiment repo from $RepoRoot"
-robocopy $RepoRoot $PackExp /MIR /XD .git runs .tmp outputs wandb data datasets hf_cache .pytest_cache __pycache__ /XF *.pyc *.tar.gz *.zip | Out-Null
+robocopy $RepoRoot $PackExp /MIR /XD .git .local runs .tmp outputs wandb data datasets hf_cache .pytest_cache __pycache__ /XF *.pyc *.tar.gz *.zip | Out-Null
 $RoboCode = $LASTEXITCODE
 if ($RoboCode -ge 8) {
     throw "robocopy failed for experiment repo with exit code $RoboCode"

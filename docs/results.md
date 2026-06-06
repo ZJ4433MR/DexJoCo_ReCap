@@ -108,3 +108,53 @@ ACP mechanism was needed. The local Evo-RL source tree was patched to add:
 - `--acp.positive_sample_weight=<weight>`
 
 The successful run used `--acp.positive_sample_weight=1.5`.
+
+## DexJoCo language-policy smoke
+
+Run: `dexjoco_headless_smoke_l40_v4`
+
+Purpose: verify that the next-stage DexJoCo environment works on the L40 node
+and exposes a real language-conditioned policy observation for single-arm
+`water_plant`.
+
+Result:
+
+- DexJoCo source commit: `8d23b0fab23b17a58c4b55f3942e17013aaf8267`
+- Task: `water_plant`
+- Prompt: `Grasp the watering can and apply water to the plant.`
+- State shape: `23`
+- Image shapes: `base=(224,224,3)`, `wrist=(224,224,3)`
+- Smoke steps: `5`
+- Exit code: `0`
+
+The compute node could not reliably clone GitHub, so the runner now supports a
+temporary `-LocalDexJoCoPath` fallback. DexJoCo source is copied only into the
+per-run archive and removed remotely after results are pulled back.
+
+## DexJoCo OpenPI/pi0.5 pretrained eval
+
+Run: `dexjoco_pi05_water_plant_eval_l40_v1`
+
+Configuration:
+
+- Task: `water_plant`
+- Policy config: `water_plant`
+- Eval config: `configs/rand_obj/water_plant.yaml`
+- Checkpoint source: `DexJoCo/DexJoCo-Pi05`, path
+  `pi05_dexjoco_ckpt/water_plant`
+- Episodes: `3`
+- Seed: `0`
+
+Outcome:
+
+| Method | Success rate | Episodes |
+| --- | ---: | ---: |
+| OpenPI/pi0.5 pretrained `water_plant` | 0.0% | 3 |
+
+Interpretation: the DexJoCo + OpenPI language-conditioned policy path is now
+operational: the job installed DexJoCo/OpenPI, downloaded the public checkpoint,
+restored the 6.3 GiB params, started the websocket policy server, and completed
+simulation evaluation. The 3-episode smoke was not enough to show success on
+`water_plant`; the next experimental step is to run a larger 20-50 episode eval
+or compare easier single-arm tasks such as `click_mouse` and `hammer_nail`
+before adding ReCap value/advantage conditioning.

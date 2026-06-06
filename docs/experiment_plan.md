@@ -77,3 +77,31 @@ See `docs/results.md` for the stronger PuSH-T diffusion run where full-data BC
 reached 50.0% success and ReCap/ACP weighted fine-tuning reached 62.0% success
 over 100 evaluation episodes. The earlier 100-demo run reached 28.0% BC and
 34.0% ReCap success over 50 evaluation episodes.
+
+## DexJoCo language-policy milestone
+
+The next stage moves from PuSH-T to DexJoCo with an actual language-conditioned
+OpenPI/pi0.5 policy. Start with the single-arm `water_plant` task:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/20_dexjoco_headless_smoke.sh `
+  -RunName dexjoco_headless_smoke_l40 `
+  -Time 02:00:00
+```
+
+Then evaluate the pretrained pi0.5 checkpoint:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/21_dexjoco_pi05_water_plant_eval.sh `
+  -RunName dexjoco_pi05_water_plant_eval_l40 `
+  -Time 06:00:00 `
+  -Memory 96G
+```
+
+Details are in `docs/dexjoco_language_policy.md`.

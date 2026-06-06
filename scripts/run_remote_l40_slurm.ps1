@@ -2,6 +2,7 @@ param(
     [string]$ConfigPath = "",
     [string]$HostAlias = "hpc-hopper",
     [string]$LocalEvoRlPath = "E:\Evo-RL-main\Evo-RL-main",
+    [string]$LocalDexJoCoPath = "",
     [string]$Job = "jobs/00_remote_smoke.sh",
     [string]$RunName = "",
     [string]$RemoteStageBase = "/share/home/u23133/.cache/recap-sim-l40-stage",
@@ -81,10 +82,22 @@ if ($RoboCode -ge 8) {
 }
 
 Write-Host "[local] Packing experiment repo from $RepoRoot"
-robocopy $RepoRoot $PackExp /MIR /XD .git runs .tmp outputs wandb data datasets hf_cache .pytest_cache __pycache__ /XF *.pyc *.tar.gz *.zip | Out-Null
+robocopy $RepoRoot $PackExp /MIR /XD .git .local runs .tmp outputs wandb data datasets hf_cache .pytest_cache __pycache__ /XF *.pyc *.tar.gz *.zip | Out-Null
 $RoboCode = $LASTEXITCODE
 if ($RoboCode -ge 8) {
     throw "robocopy failed for experiment repo with exit code $RoboCode"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($LocalDexJoCoPath)) {
+    $ResolvedDexJoCoPath = (Resolve-Path $LocalDexJoCoPath).Path
+    $PackDexJoCo = Join-Path $PackExp ".local\dexjoco-src"
+    New-Item -ItemType Directory -Force -Path (Split-Path $PackDexJoCo -Parent) | Out-Null
+    Write-Host "[local] Packing DexJoCo fallback source from $ResolvedDexJoCoPath"
+    robocopy $ResolvedDexJoCoPath $PackDexJoCo /MIR /XD __pycache__ .pytest_cache /XF *.pyc | Out-Null
+    $RoboCode = $LASTEXITCODE
+    if ($RoboCode -ge 8) {
+        throw "robocopy failed for DexJoCo fallback source with exit code $RoboCode"
+    }
 }
 
 if (Test-Path $ArchivePath) {
