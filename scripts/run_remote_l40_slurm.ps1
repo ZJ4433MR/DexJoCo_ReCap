@@ -25,6 +25,7 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
     $ResolvedConfig = Resolve-Path $ConfigPath
     Write-Host "[local] Loading config $ResolvedConfig"
+    $ExplicitParams = $PSBoundParameters
     foreach ($Line in Get-Content $ResolvedConfig) {
         $Trimmed = $Line.Trim()
         if ($Trimmed.Length -eq 0 -or $Trimmed.StartsWith("#")) {
@@ -37,17 +38,17 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
         $Key = $Parts[0].Trim()
         $Value = $Parts[1].Trim()
         switch ($Key) {
-            "REMOTE_HOST" { $HostAlias = $Value }
-            "REMOTE_STAGE_BASE" { $RemoteStageBase = $Value }
-            "REMOTE_BASE" { $RemoteComputeBase = $Value }
-            "REMOTE_ENV_SETUP" { $RemoteEnvSetup = $Value }
-            "REMOTE_BEFORE" { $RemoteBefore = $Value }
-            "HF_TOKEN" { $HfToken = $Value }
-            "SLURM_PARTITION" { $Partition = $Value }
-            "SLURM_GRES" { $Gres = $Value }
-            "SLURM_CPUS" { $Cpus = [int]$Value }
-            "SLURM_MEM" { $Memory = $Value }
-            "SLURM_TIME" { $Time = $Value }
+            "REMOTE_HOST" { if (-not $ExplicitParams.ContainsKey("HostAlias")) { $HostAlias = $Value } }
+            "REMOTE_STAGE_BASE" { if (-not $ExplicitParams.ContainsKey("RemoteStageBase")) { $RemoteStageBase = $Value } }
+            "REMOTE_BASE" { if (-not $ExplicitParams.ContainsKey("RemoteComputeBase")) { $RemoteComputeBase = $Value } }
+            "REMOTE_ENV_SETUP" { if (-not $ExplicitParams.ContainsKey("RemoteEnvSetup")) { $RemoteEnvSetup = $Value } }
+            "REMOTE_BEFORE" { if (-not $ExplicitParams.ContainsKey("RemoteBefore")) { $RemoteBefore = $Value } }
+            "HF_TOKEN" { if (-not $ExplicitParams.ContainsKey("HfToken")) { $HfToken = $Value } }
+            "SLURM_PARTITION" { if (-not $ExplicitParams.ContainsKey("Partition")) { $Partition = $Value } }
+            "SLURM_GRES" { if (-not $ExplicitParams.ContainsKey("Gres")) { $Gres = $Value } }
+            "SLURM_CPUS" { if (-not $ExplicitParams.ContainsKey("Cpus")) { $Cpus = [int]$Value } }
+            "SLURM_MEM" { if (-not $ExplicitParams.ContainsKey("Memory")) { $Memory = $Value } }
+            "SLURM_TIME" { if (-not $ExplicitParams.ContainsKey("Time")) { $Time = $Value } }
         }
     }
 }

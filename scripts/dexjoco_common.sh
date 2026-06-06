@@ -74,19 +74,69 @@ setup_openpi_env() {
   fi
 }
 
+relax_openpi_websocket_timeouts() {
+  RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
+  DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
+
+  python - "$DEXJOCO_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+client_file = root / "openpi/packages/openpi-client/src/openpi_client/websocket_client_policy.py"
+server_file = root / "openpi/src/openpi/serving/websocket_policy_server.py"
+
+client_text = client_file.read_text()
+client_old = "compression=None, max_size=None, additional_headers=headers"
+client_new = (
+    "compression=None, max_size=None, additional_headers=headers, "
+    "ping_interval=None, open_timeout=60, close_timeout=10"
+)
+if client_new not in client_text:
+    client_file.write_text(client_text.replace(client_old, client_new))
+    print(f"[dexjoco] patched websocket client timeout: {client_file}")
+else:
+    print(f"[dexjoco] websocket client timeout already patched: {client_file}")
+
+server_text = server_file.read_text()
+server_old = "process_request=_health_check,\n        ) as server:"
+server_new = "process_request=_health_check,\n            ping_interval=None,\n        ) as server:"
+if server_new not in server_text:
+    server_file.write_text(server_text.replace(server_old, server_new))
+    print(f"[dexjoco] patched websocket server timeout: {server_file}")
+else:
+    print(f"[dexjoco] websocket server timeout already patched: {server_file}")
+PY
+}
+
 download_dexjoco_pi05_checkpoint() {
   RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
   DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
   OPENPI_ENV_PREFIX="${OPENPI_ENV_PREFIX:-$RUN_ROOT/conda_envs/openpi}"
   DEXJOCO_HF_MODEL_REPO="${DEXJOCO_HF_MODEL_REPO:-DexJoCo/DexJoCo-Pi05}"
   DEXJOCO_TASK="${DEXJOCO_TASK:-water_plant}"
+  DEXJOCO_CHECKPOINT_INCLUDE_TRAIN_STATE="${DEXJOCO_CHECKPOINT_INCLUDE_TRAIN_STATE:-0}"
+
+  local include_args=(
+    --include "pi05_dexjoco_ckpt/$DEXJOCO_TASK/_CHECKPOINT_METADATA"
+    --include "pi05_dexjoco_ckpt/$DEXJOCO_TASK/assets/**"
+    --include "pi05_dexjoco_ckpt/$DEXJOCO_TASK/params/**"
+  )
+
+  if [[ "$DEXJOCO_CHECKPOINT_INCLUDE_TRAIN_STATE" == "1" ]]; then
+    include_args+=(--include "pi05_dexjoco_ckpt/$DEXJOCO_TASK/train_state/**")
+  fi
 
   mkdir -p "$DEXJOCO_DIR/checkpoints"
   echo "[dexjoco] downloading checkpoint: $DEXJOCO_HF_MODEL_REPO pi05_dexjoco_ckpt/$DEXJOCO_TASK"
-  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" hf download \
-    "$DEXJOCO_HF_MODEL_REPO" \
-    --local-dir "$DEXJOCO_DIR/checkpoints" \
-    --include "pi05_dexjoco_ckpt/$DEXJOCO_TASK/**"
+  for ((i = 0; i < ${#include_args[@]}; i += 2)); do
+    pattern="${include_args[$((i + 1))]}"
+    echo "[dexjoco] hf include: $pattern"
+    conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" hf download \
+      "$DEXJOCO_HF_MODEL_REPO" \
+      --local-dir "$DEXJOCO_DIR/checkpoints" \
+      --include "$pattern"
+  done
 }
 
 wait_for_port() {

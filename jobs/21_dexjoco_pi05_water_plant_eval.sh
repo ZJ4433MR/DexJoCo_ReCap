@@ -25,6 +25,7 @@ mkdir -p "$OUT_DIR"
 prepare_dexjoco_source
 setup_dexjoco_env
 setup_openpi_env
+relax_openpi_websocket_timeouts
 download_dexjoco_pi05_checkpoint
 
 cleanup_server() {

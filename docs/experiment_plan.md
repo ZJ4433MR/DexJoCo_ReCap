@@ -105,3 +105,16 @@ Then evaluate the pretrained pi0.5 checkpoint:
 ```
 
 Details are in `docs/dexjoco_language_policy.md`.
+
+If `water_plant` remains too hard in short evals, run the single-arm matrix to
+find a non-zero baseline:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/22_dexjoco_pi05_single_arm_matrix.sh `
+  -RunName dexjoco_pi05_single_arm_matrix_l40 `
+  -Time 08:00:00 `
+  -Memory 96G
+```

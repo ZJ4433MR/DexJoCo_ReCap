@@ -51,6 +51,23 @@ OpenPI/pi0.5 language-conditioned policy evaluation:
 The eval job defaults to 3 episodes. Edit `DEXJOCO_EVAL_EPISODES` in the job
 script before launch if a longer evaluation is needed.
 
+Single-arm task matrix, used to find an easier non-zero baseline before ReCap:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/22_dexjoco_pi05_single_arm_matrix.sh `
+  -RunName dexjoco_pi05_single_arm_matrix_l40 `
+  -Time 08:00:00 `
+  -Memory 96G
+```
+
+The matrix defaults to `click_mouse hammer_nail` with 3 episodes per task.
+The runner treats command-line `-Time` and `-Memory` as higher priority than
+values in `configs/remote-l40.env`, so longer matrix jobs can override the
+default local config without editing private settings.
+
 `-LocalDexJoCoPath` is optional when the L40 server can clone GitHub directly.
 It is useful on this cluster because compute-node GitHub access has been
 unstable. The fallback source is copied only into the temporary run archive and
