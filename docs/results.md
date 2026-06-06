@@ -1,6 +1,41 @@
 # Experiment Results
 
-## Current validated run
+## Stronger full-data run
+
+Run: `pusht_recap_diffusion_full50k_w15_l40_v1`
+
+Local result directory:
+
+```text
+E:\Evo-RL-main\recap-sim-l40\runs\pusht_recap_diffusion_full50k_w15_l40_v1
+```
+
+Remote staging directory was removed after the result archive was pulled back.
+
+Configuration:
+
+- Dataset: `lerobot/pusht`
+- Episodes: `0..205`
+- Policy: diffusion
+- BC policy steps: `50000`
+- Value model steps: `5000`
+- ReCap policy steps: `5000`
+- ReCap initialization: from BC checkpoint
+- ACP sampling: full dataset, ACP-positive rows upweighted by `1.5`
+- Evaluation: `100` PuSH-T episodes
+
+Metrics:
+
+| Method | Success rate | Avg sum reward | Avg max reward | Episodes |
+| --- | ---: | ---: | ---: | ---: |
+| BC diffusion | 50.0% | 114.5318 | 0.9267 | 100 |
+| ReCap/ACP weighted fine-tune | 62.0% | 111.4149 | 0.9674 | 100 |
+
+Conclusion: increasing the dataset and BC training budget improves BC from the
+previous 28.0% to 50.0%. ReCap/ACP weighted fine-tuning still improves over the
+stronger BC baseline by `+12.0` percentage points.
+
+## First validated non-zero run
 
 Run: `pusht_recap_diffusion_weighted_ft_l40_v1`
 

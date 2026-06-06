@@ -73,6 +73,7 @@ pi0.6 weights.
 
 ## Current result snapshot
 
-See `docs/results.md` for the validated PuSH-T diffusion run where BC reached
-28.0% success and ReCap/ACP weighted fine-tuning reached 34.0% success over 50
-evaluation episodes.
+See `docs/results.md` for the stronger PuSH-T diffusion run where full-data BC
+reached 50.0% success and ReCap/ACP weighted fine-tuning reached 62.0% success
+over 100 evaluation episodes. The earlier 100-demo run reached 28.0% BC and
+34.0% ReCap success over 50 evaluation episodes.
