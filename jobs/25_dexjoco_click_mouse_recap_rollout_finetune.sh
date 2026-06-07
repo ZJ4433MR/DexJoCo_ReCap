@@ -17,7 +17,8 @@ DEXJOCO_PORT="${DEXJOCO_PORT:-8000}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
 DEXJOCO_ACP_SUFFIX="${DEXJOCO_ACP_SUFFIX:- Use the high-advantage successful strategy.}"
 DEXJOCO_RECAP_TRAIN_STEPS="${DEXJOCO_RECAP_TRAIN_STEPS:-500}"
-DEXJOCO_RECAP_BATCH_SIZE="${DEXJOCO_RECAP_BATCH_SIZE:-1}"
+DEXJOCO_RECAP_BATCH_SIZE="${DEXJOCO_RECAP_BATCH_SIZE:-2}"
+DEXJOCO_RECAP_FSDP_DEVICES="${DEXJOCO_RECAP_FSDP_DEVICES:-2}"
 DEXJOCO_RECAP_WARMUP_STEPS="${DEXJOCO_RECAP_WARMUP_STEPS:-50}"
 DEXJOCO_RECAP_SAVE_INTERVAL="${DEXJOCO_RECAP_SAVE_INTERVAL:-250}"
 DEXJOCO_RECAP_EXP_NAME="${DEXJOCO_RECAP_EXP_NAME:-recap_success_rollout_acp}"
@@ -236,14 +237,15 @@ conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/compu
   --batch-size="$DEXJOCO_RECAP_BATCH_SIZE" \
   --num-workers=0
 
-echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE"
+echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES"
 conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/train.py \
   "$DEXJOCO_TASK" \
   --exp-name="$DEXJOCO_RECAP_EXP_NAME" \
   --overwrite \
   --num-train-steps="$DEXJOCO_RECAP_TRAIN_STEPS" \
   --save-interval="$DEXJOCO_RECAP_SAVE_INTERVAL" \
-  --log-interval=50
+  --log-interval=50 \
+  --fsdp-devices="$DEXJOCO_RECAP_FSDP_DEVICES"
 
 RECAP_CKPT_ROOT="$DEXJOCO_DIR/checkpoints/recap_acp_ckpts/$DEXJOCO_TASK/$DEXJOCO_RECAP_EXP_NAME"
 RECAP_STEP="$(find "$RECAP_CKPT_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -n | tail -1)"
