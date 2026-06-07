@@ -228,13 +228,15 @@ Metrics:
 | Public pi0.5 baseline | 65.0% | 20 | Original prompt |
 | ACP prompt only | 55.0% | 20 | No fine-tuning |
 | ReCap success-only LoRA FT | 50.0% | 20 | 10/20 successful collection rollouts, 3323 frames |
+| ReCap mixed short FT | 15.0% | 20 | 60 original-prompt rollouts, all frames kept, 40 successes, 23791 frames, 200 steps |
 
 Conclusion: the ReCap wiring works end-to-end: rollout collection, ACP prompt
 injection, local NPZ dataset, OpenPI norm stats, LoRA-only checkpoint training,
 policy serving, and DexJoCo evaluation all completed. The first success-only
 variant did not improve the policy. The likely issue is hard filtering: only
 successful rollout frames are retained, so the fine-tune sees narrow state
-coverage and overfits despite the training loss decreasing. The next variant
-keeps all rollout frames under the original prompt as a behavior-preserving
-regularizer, while repeating successful frames under the ACP/high-advantage
-prompt to better approximate ReCap advantage conditioning.
+coverage and overfits despite the training loss decreasing. A mixed variant
+that kept failure frames under the original prompt was worse, suggesting the
+single LoRA adapter is sensitive to conflicting prompt/action supervision. The
+next conservative check is to collect more original-prompt rollouts, keep only
+successful trajectories, and reduce the LoRA update to 50 steps.
