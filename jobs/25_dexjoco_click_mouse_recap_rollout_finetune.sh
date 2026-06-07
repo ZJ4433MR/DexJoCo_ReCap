@@ -11,7 +11,7 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.65}"
 RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
 DEXJOCO_EVAL_SEED="${DEXJOCO_EVAL_SEED:-0}"
-DEXJOCO_COLLECT_EPISODES="${DEXJOCO_COLLECT_EPISODES:-30}"
+DEXJOCO_COLLECT_EPISODES="${DEXJOCO_COLLECT_EPISODES:-20}"
 DEXJOCO_EVAL_EPISODES="${DEXJOCO_EVAL_EPISODES:-20}"
 DEXJOCO_PORT="${DEXJOCO_PORT:-8000}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
@@ -105,6 +105,7 @@ class RecapRolloutDataset(Dataset):
             "observation.images.wrist": self._wrist[idx],
             "observation.state": self._state[idx],
             "action": actions.astype(np.float32, copy=False),
+            "prompt": self._prompt,
             "task_index": np.asarray(0, dtype=np.int64),
             "task": self._prompt,
         }
