@@ -3,6 +3,7 @@ set -euo pipefail
 
 DEXJOCO_REPO="${DEXJOCO_REPO:-https://github.com/brave-eai/dexjoco.git}"
 DEXJOCO_COMMIT="${DEXJOCO_COMMIT:-8d23b0fab23b17a58c4b55f3942e17013aaf8267}"
+DEXJOCO_PREFER_LOCAL_SOURCE="${DEXJOCO_PREFER_LOCAL_SOURCE:-1}"
 
 _dexjoco_run_root() {
   if [[ -z "${EXP_DIR:-}" ]]; then
@@ -16,6 +17,15 @@ prepare_dexjoco_source() {
   RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
   DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
   DEXJOCO_LOCAL_SOURCE="${DEXJOCO_LOCAL_SOURCE:-$EXP_DIR/.local/dexjoco-src}"
+
+  if [[ "$DEXJOCO_PREFER_LOCAL_SOURCE" == "1" && ! -d "$DEXJOCO_DIR/.git" && -d "$DEXJOCO_LOCAL_SOURCE/.git" ]]; then
+    echo "[dexjoco] using packaged fallback source: $DEXJOCO_LOCAL_SOURCE"
+    case "$DEXJOCO_DIR" in
+      "$RUN_ROOT"/*) rm -rf "$DEXJOCO_DIR" ;;
+      *) echo "[dexjoco] refusing to replace unexpected path: $DEXJOCO_DIR" >&2; return 2 ;;
+    esac
+    cp -a "$DEXJOCO_LOCAL_SOURCE" "$DEXJOCO_DIR"
+  fi
 
   if [[ ! -d "$DEXJOCO_DIR/.git" ]]; then
     echo "[dexjoco] cloning $DEXJOCO_REPO into $DEXJOCO_DIR"
