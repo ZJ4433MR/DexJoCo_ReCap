@@ -97,6 +97,9 @@ is not committed to Git.
 - `dexjoco_pi05_single_arm_matrix_l40_v3`: completed with websocket ping
   timeout disabled during long JAX inference. `click_mouse` reached `2/3`
   success and `hammer_nail` reached `3/3`.
+- `dexjoco_pi05_single_arm_eval20_l40_v1`: completed the larger baseline.
+  `click_mouse` reached `13/20` success and `hammer_nail` reached `15/20`.
+  Use `click_mouse` as the first ReCap target.
 
 ## Storage policy
 

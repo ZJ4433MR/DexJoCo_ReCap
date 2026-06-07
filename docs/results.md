@@ -181,3 +181,26 @@ Metrics:
 Conclusion: both tasks give non-zero language-conditioned baselines. For ReCap,
 `click_mouse` is the better first candidate because it is not saturated in the
 short eval, while `hammer_nail` may be too easy for measuring improvement.
+
+## DexJoCo 20-episode single-arm baseline
+
+Run: `dexjoco_pi05_single_arm_eval20_l40_v1`
+
+Configuration:
+
+- Tasks: `click_mouse`, `hammer_nail`
+- Checkpoint source: `DexJoCo/DexJoCo-Pi05`
+- Episodes: `20` per task
+- Seed: `0`
+
+Metrics:
+
+| Task | Success rate | Episodes |
+| --- | ---: | ---: |
+| `click_mouse` | 65.0% | 20 |
+| `hammer_nail` | 75.0% | 20 |
+
+Conclusion: the non-zero baseline holds at a larger evaluation size. Both tasks
+leave measurable room for improvement, but `click_mouse` remains the cleaner
+first ReCap target because the baseline is lower and the task is still
+single-arm/language-conditioned.
