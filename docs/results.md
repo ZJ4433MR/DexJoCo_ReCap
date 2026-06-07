@@ -229,6 +229,7 @@ Metrics:
 | ACP prompt only | 55.0% | 20 | No fine-tuning |
 | ReCap success-only LoRA FT | 50.0% | 20 | 10/20 successful collection rollouts, 3323 frames |
 | ReCap mixed short FT | 15.0% | 20 | 60 original-prompt rollouts, all frames kept, 40 successes, 23791 frames, 200 steps |
+| ReCap success-only 50-step FT | 0.0% | 20 | 40 original-prompt rollouts, 24 successes, 7487 frames, 50 steps |
 
 Conclusion: the ReCap wiring works end-to-end: rollout collection, ACP prompt
 injection, local NPZ dataset, OpenPI norm stats, LoRA-only checkpoint training,
@@ -238,5 +239,7 @@ successful rollout frames are retained, so the fine-tune sees narrow state
 coverage and overfits despite the training loss decreasing. A mixed variant
 that kept failure frames under the original prompt was worse, suggesting the
 single LoRA adapter is sensitive to conflicting prompt/action supervision. The
-next conservative check is to collect more original-prompt rollouts, keep only
-successful trajectories, and reduce the LoRA update to 50 steps.
+most conservative success-only 50-step variant also failed, suggesting this
+approximation is not enough: the next implementation step should add an
+explicit value/advantage model or move to a closer ReCap reproduction setting,
+rather than treating ACP as ordinary prompt-conditioned behavior cloning.
