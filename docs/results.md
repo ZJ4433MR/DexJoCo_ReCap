@@ -204,3 +204,37 @@ Conclusion: the non-zero baseline holds at a larger evaluation size. Both tasks
 leave measurable room for improvement, but `click_mouse` remains the cleaner
 first ReCap target because the baseline is lower and the task is still
 single-arm/language-conditioned.
+
+## DexJoCo click_mouse ReCap first pass
+
+Runs:
+
+- `dexjoco_click_mouse_acp_prompt_eval20_l40_v1`
+- `dexjoco_click_mouse_recap_rollout_ft_l40_v10b`
+
+Configuration:
+
+- Task: `click_mouse`
+- Baseline checkpoint: public `DexJoCo/DexJoCo-Pi05`
+- ACP prompt suffix: `Use the high-advantage successful strategy.`
+- ReCap data: 20 public-policy rollouts, keep successful trajectories only
+- ReCap train: LoRA-only OpenPI fine-tune, 2x L40 FSDP, batch size 2, 500 steps
+- Eval: 20 episodes, seed `0`
+
+Metrics:
+
+| Method | Success rate | Episodes | Notes |
+| --- | ---: | ---: | --- |
+| Public pi0.5 baseline | 65.0% | 20 | Original prompt |
+| ACP prompt only | 55.0% | 20 | No fine-tuning |
+| ReCap success-only LoRA FT | 50.0% | 20 | 10/20 successful collection rollouts, 3323 frames |
+
+Conclusion: the ReCap wiring works end-to-end: rollout collection, ACP prompt
+injection, local NPZ dataset, OpenPI norm stats, LoRA-only checkpoint training,
+policy serving, and DexJoCo evaluation all completed. The first success-only
+variant did not improve the policy. The likely issue is hard filtering: only
+successful rollout frames are retained, so the fine-tune sees narrow state
+coverage and overfits despite the training loss decreasing. The next variant
+keeps all rollout frames under the original prompt as a behavior-preserving
+regularizer, while repeating successful frames under the ACP/high-advantage
+prompt to better approximate ReCap advantage conditioning.

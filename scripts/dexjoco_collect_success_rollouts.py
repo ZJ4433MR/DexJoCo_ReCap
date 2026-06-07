@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Collect successful DexJoCo/OpenPI rollouts into a compact NPZ dataset."""
+"""Collect DexJoCo/OpenPI rollouts into a compact ReCap NPZ dataset."""
 
 from __future__ import annotations
 
@@ -68,7 +68,9 @@ def collect(args: argparse.Namespace) -> None:
 
     env_name = cfg["env_name"]
     camera_mapping = cfg["camera_mapping"]
-    prompt = cfg["prompt"].rstrip() + args.acp_suffix
+    base_prompt = cfg["prompt"].rstrip()
+    acp_prompt = base_prompt + args.acp_suffix
+    prompt = acp_prompt if args.collect_prompt_mode == "acp" else base_prompt
     dual_arm = cfg["robot_type"] == "dual_arm"
 
     env = DexJoCoOpenPIEnv(
@@ -84,7 +86,7 @@ def collect(args: argparse.Namespace) -> None:
     )
     client = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
 
-    success_episodes = []
+    saved_episodes = []
     episode_success_flags = []
     action_horizon = args.action_horizon
 
@@ -131,13 +133,14 @@ def collect(args: argparse.Namespace) -> None:
 
             episode_success_flags.append(bool(env.is_success))
             print(f"[collect] episode {ep + 1} success={env.is_success} steps={len(frames)}")
-            if env.is_success and frames:
-                success_episodes.append(frames)
+            if frames and (env.is_success or args.include_failures):
+                saved_episodes.append((frames, bool(env.is_success)))
 
     finally:
         env.close()
 
-    if not success_episodes:
+    success_count = sum(1 for _, is_success in saved_episodes if is_success)
+    if success_count == 0:
         raise RuntimeError("No successful episodes collected; cannot build ReCap dataset.")
 
     base_frames = []
@@ -145,13 +148,15 @@ def collect(args: argparse.Namespace) -> None:
     states = []
     actions = []
     episode_ids = []
-    for episode_id, frames in enumerate(success_episodes):
+    frame_success = []
+    for episode_id, (frames, is_success) in enumerate(saved_episodes):
         for frame in frames:
             base_frames.append(frame["base"])
             wrist_frames.append(frame["wrist"])
             states.append(frame["state"])
             actions.append(frame["action"])
             episode_ids.append(episode_id)
+            frame_success.append(is_success)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -161,9 +166,14 @@ def collect(args: argparse.Namespace) -> None:
         state=np.asarray(states, dtype=np.float32),
         action=np.asarray(actions, dtype=np.float32),
         episode_id=np.asarray(episode_ids, dtype=np.int32),
-        prompt=np.asarray(prompt),
+        is_success=np.asarray(frame_success, dtype=np.bool_),
+        prompt=np.asarray(acp_prompt),
+        base_prompt=np.asarray(base_prompt),
+        acp_prompt=np.asarray(acp_prompt),
+        collection_prompt=np.asarray(prompt),
         total_episodes=np.asarray(args.episodes, dtype=np.int32),
-        successful_episodes=np.asarray(len(success_episodes), dtype=np.int32),
+        saved_episodes=np.asarray(len(saved_episodes), dtype=np.int32),
+        successful_episodes=np.asarray(success_count, dtype=np.int32),
         episode_success_flags=np.asarray(episode_success_flags, dtype=np.bool_),
     )
 
@@ -172,9 +182,12 @@ def collect(args: argparse.Namespace) -> None:
         "\n".join(
             [
                 f"total_episodes={args.episodes}",
-                f"successful_episodes={len(success_episodes)}",
+                f"saved_episodes={len(saved_episodes)}",
+                f"successful_episodes={success_count}",
                 f"total_frames={len(actions)}",
-                f"prompt={prompt}",
+                f"collection_prompt={prompt}",
+                f"base_prompt={base_prompt}",
+                f"acp_prompt={acp_prompt}",
             ]
         )
         + "\n",
@@ -196,6 +209,8 @@ def main() -> None:
     parser.add_argument("--replan-ratio", type=float, default=0.8)
     parser.add_argument("--action-horizon", type=int, default=30)
     parser.add_argument("--acp-suffix", default=" Use the high-advantage successful strategy.")
+    parser.add_argument("--include-failures", action="store_true")
+    parser.add_argument("--collect-prompt-mode", choices=("base", "acp"), default="acp")
     parser.add_argument("--rand-full", action="store_true")
     parser.add_argument("--randomize-dynamics", action="store_true")
     collect(parser.parse_args())

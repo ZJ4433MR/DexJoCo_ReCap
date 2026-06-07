@@ -23,7 +23,11 @@ DEXJOCO_RECAP_FSDP_DEVICES="${DEXJOCO_RECAP_FSDP_DEVICES:-2}"
 DEXJOCO_RECAP_WARMUP_STEPS="${DEXJOCO_RECAP_WARMUP_STEPS:-50}"
 DEXJOCO_RECAP_SAVE_INTERVAL="${DEXJOCO_RECAP_SAVE_INTERVAL:-250}"
 DEXJOCO_RECAP_EXP_NAME="${DEXJOCO_RECAP_EXP_NAME:-recap_success_rollout_acp}"
+DEXJOCO_RECAP_INCLUDE_FAILURES="${DEXJOCO_RECAP_INCLUDE_FAILURES:-0}"
+DEXJOCO_RECAP_COLLECT_PROMPT_MODE="${DEXJOCO_RECAP_COLLECT_PROMPT_MODE:-acp}"
 OPENPI_RECAP_LORA_ONLY="${OPENPI_RECAP_LORA_ONLY:-1}"
+OPENPI_RECAP_BASE_REPEAT="${OPENPI_RECAP_BASE_REPEAT:-0}"
+OPENPI_RECAP_POSITIVE_REPEAT="${OPENPI_RECAP_POSITIVE_REPEAT:-1}"
 
 OUT_DIR="$OUTPUT_DIR/dexjoco_click_mouse_recap_rollout_finetune"
 CONFIG_DIR="$OUT_DIR/configs"
@@ -78,7 +82,7 @@ if "class RecapRolloutDataset" not in text:
     insert = r'''
 
 class RecapRolloutDataset(Dataset):
-    """Small NPZ dataset built from successful DexJoCo policy rollouts."""
+    """Small NPZ dataset built from DexJoCo policy rollouts."""
 
     def __init__(self, path: str, action_horizon: int):
         self._path = path
@@ -88,15 +92,36 @@ class RecapRolloutDataset(Dataset):
         self._state = data["state"]
         self._action = data["action"]
         self._episode_id = data["episode_id"]
-        self._prompt = str(data["prompt"])
+        self._is_success = data["is_success"] if "is_success" in data else np.ones(len(self._action), dtype=np.bool_)
+        self._base_prompt = str(data["base_prompt"]) if "base_prompt" in data else str(data["prompt"])
+        self._acp_prompt = str(data["acp_prompt"]) if "acp_prompt" in data else str(data["prompt"])
         self._action_horizon = action_horizon
         self._episode_end = {}
         for episode_id in np.unique(self._episode_id):
             indices = np.flatnonzero(self._episode_id == episode_id)
             self._episode_end[int(episode_id)] = int(indices[-1]) + 1
+        base_repeat = int(os.environ.get("OPENPI_RECAP_BASE_REPEAT", "0"))
+        positive_repeat = int(os.environ.get("OPENPI_RECAP_POSITIVE_REPEAT", "1"))
+        source_indices = []
+        prompt_ids = []
+        for idx in range(len(self._action)):
+            for _ in range(base_repeat):
+                source_indices.append(idx)
+                prompt_ids.append(0)
+            if bool(self._is_success[idx]):
+                for _ in range(positive_repeat):
+                    source_indices.append(idx)
+                    prompt_ids.append(1)
+        if not source_indices:
+            source_indices = list(range(len(self._action)))
+            prompt_ids = [1] * len(source_indices)
+        self._source_indices = np.asarray(source_indices, dtype=np.int64)
+        self._prompt_ids = np.asarray(prompt_ids, dtype=np.int8)
 
     def __getitem__(self, index: SupportsIndex) -> dict:
-        idx = index.__index__()
+        virtual_idx = index.__index__()
+        idx = int(self._source_indices[virtual_idx])
+        prompt = self._acp_prompt if int(self._prompt_ids[virtual_idx]) == 1 else self._base_prompt
         episode_id = int(self._episode_id[idx])
         episode_end = self._episode_end[episode_id]
         action_end = min(idx + self._action_horizon, episode_end)
@@ -109,13 +134,13 @@ class RecapRolloutDataset(Dataset):
             "observation.images.wrist": self._wrist[idx],
             "observation.state": self._state[idx],
             "action": actions.astype(np.float32, copy=False),
-            "prompt": self._prompt,
+            "prompt": prompt,
             "task_index": np.asarray(0, dtype=np.int64),
-            "task": self._prompt,
+            "task": prompt,
         }
 
     def __len__(self) -> int:
-        return len(self._action)
+        return len(self._source_indices)
 '''
     text = text.replace(marker, insert + marker)
 
@@ -259,14 +284,20 @@ start_policy_server "../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK" "$OUT_DIR/p
 public_server_pid="$POLICY_SERVER_PID"
 
 cd "$DEXJOCO_DIR"
-conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" python "$EXP_DIR/scripts/dexjoco_collect_success_rollouts.py" \
+collect_args=(
   --config="$base_config" \
   --output="$ROLLOUT_DATASET" \
   --host="$DEXJOCO_HOST" \
   --port="$DEXJOCO_PORT" \
   --seed="$DEXJOCO_EVAL_SEED" \
   --episodes="$DEXJOCO_COLLECT_EPISODES" \
-  --acp-suffix="$DEXJOCO_ACP_SUFFIX"
+  --acp-suffix="$DEXJOCO_ACP_SUFFIX" \
+  --collect-prompt-mode="$DEXJOCO_RECAP_COLLECT_PROMPT_MODE"
+)
+if [[ "$DEXJOCO_RECAP_INCLUDE_FAILURES" == "1" ]]; then
+  collect_args+=(--include-failures)
+fi
+conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" python "$EXP_DIR/scripts/dexjoco_collect_success_rollouts.py" "${collect_args[@]}"
 cp "${ROLLOUT_DATASET%.npz}.summary.txt" "$OUT_DIR/recap_success_rollouts.summary.txt"
 
 stop_policy_server "$public_server_pid"
@@ -277,6 +308,8 @@ patch_openpi_config_yaml
 export OPENPI_RECAP_ROLLOUT_NPZ="$ROLLOUT_DATASET"
 export DEXJOCO_RECAP_WARMUP_STEPS
 export OPENPI_RECAP_LORA_ONLY
+export OPENPI_RECAP_BASE_REPEAT
+export OPENPI_RECAP_POSITIVE_REPEAT
 
 echo "[job] computing norm stats for ReCap rollout dataset"
 cd "$DEXJOCO_DIR/openpi"
@@ -285,7 +318,7 @@ conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/compu
   --batch-size="$DEXJOCO_RECAP_BATCH_SIZE" \
   --num-workers=0
 
-echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY mem_fraction=$XLA_PYTHON_CLIENT_MEM_FRACTION preallocate=$XLA_PYTHON_CLIENT_PREALLOCATE"
+echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY base_repeat=$OPENPI_RECAP_BASE_REPEAT positive_repeat=$OPENPI_RECAP_POSITIVE_REPEAT include_failures=$DEXJOCO_RECAP_INCLUDE_FAILURES collect_prompt=$DEXJOCO_RECAP_COLLECT_PROMPT_MODE mem_fraction=$XLA_PYTHON_CLIENT_MEM_FRACTION preallocate=$XLA_PYTHON_CLIENT_PREALLOCATE"
 conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/train.py \
   "$DEXJOCO_TASK" \
   --exp-name="$DEXJOCO_RECAP_EXP_NAME" \
@@ -335,7 +368,7 @@ status="ok"
 if [[ "$eval_status" -ne 0 ]]; then
   status="eval_failed"
 fi
-echo -e "recap_success_rollout_acp\t$status\t$successes\t$episodes\t$success_file\t$RECAP_STEP" | tee -a "$SUMMARY"
+echo -e "$DEXJOCO_RECAP_EXP_NAME\t$status\t$successes\t$episodes\t$success_file\t$RECAP_STEP" | tee -a "$SUMMARY"
 
 if [[ "$eval_status" -ne 0 ]]; then
   exit "$eval_status"
