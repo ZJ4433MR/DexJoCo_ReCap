@@ -6,7 +6,8 @@ source scripts/dexjoco_common.sh
 
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
 export WANDB_MODE="${WANDB_MODE:-offline}"
-export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.90}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.99}"
+export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 
 RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
@@ -257,7 +258,7 @@ conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/compu
   --batch-size="$DEXJOCO_RECAP_BATCH_SIZE" \
   --num-workers=0
 
-echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY"
+echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY mem_fraction=$XLA_PYTHON_CLIENT_MEM_FRACTION preallocate=$XLA_PYTHON_CLIENT_PREALLOCATE"
 conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/train.py \
   "$DEXJOCO_TASK" \
   --exp-name="$DEXJOCO_RECAP_EXP_NAME" \
