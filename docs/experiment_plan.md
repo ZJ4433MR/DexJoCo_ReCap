@@ -118,3 +118,15 @@ find a non-zero baseline:
   -Time 08:00:00 `
   -Memory 96G
 ```
+
+After a short non-zero baseline is found, run the 20-episode version:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/23_dexjoco_pi05_single_arm_eval20.sh `
+  -RunName dexjoco_pi05_single_arm_eval20_l40 `
+  -Time 08:00:00 `
+  -Memory 96G
+```

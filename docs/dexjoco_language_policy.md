@@ -68,6 +68,18 @@ The runner treats command-line `-Time` and `-Memory` as higher priority than
 values in `configs/remote-l40.env`, so longer matrix jobs can override the
 default local config without editing private settings.
 
+Stable 20-episode single-arm baseline:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/23_dexjoco_pi05_single_arm_eval20.sh `
+  -RunName dexjoco_pi05_single_arm_eval20_l40 `
+  -Time 08:00:00 `
+  -Memory 96G
+```
+
 `-LocalDexJoCoPath` is optional when the L40 server can clone GitHub directly.
 It is useful on this cluster because compute-node GitHub access has been
 unstable. The fallback source is copied only into the temporary run archive and
@@ -82,6 +94,9 @@ is not committed to Git.
   OpenPI/pi0.5 `water_plant` checkpoint. The 3-episode smoke result was `0/3`
   success, so it validates the language-policy plumbing rather than final task
   performance.
+- `dexjoco_pi05_single_arm_matrix_l40_v3`: completed with websocket ping
+  timeout disabled during long JAX inference. `click_mouse` reached `2/3`
+  success and `hammer_nail` reached `3/3`.
 
 ## Storage policy
 

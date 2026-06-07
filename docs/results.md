@@ -158,3 +158,26 @@ simulation evaluation. The 3-episode smoke was not enough to show success on
 `water_plant`; the next experimental step is to run a larger 20-50 episode eval
 or compare easier single-arm tasks such as `click_mouse` and `hammer_nail`
 before adding ReCap value/advantage conditioning.
+
+## DexJoCo single-arm task matrix
+
+Run: `dexjoco_pi05_single_arm_matrix_l40_v3`
+
+Configuration:
+
+- Tasks: `click_mouse`, `hammer_nail`
+- Checkpoint source: `DexJoCo/DexJoCo-Pi05`
+- Episodes: `3` per task
+- Seed: `0`
+- Websocket ping timeout disabled for long first-step JAX inference
+
+Metrics:
+
+| Task | Success rate | Episodes |
+| --- | ---: | ---: |
+| `click_mouse` | 66.7% | 3 |
+| `hammer_nail` | 100.0% | 3 |
+
+Conclusion: both tasks give non-zero language-conditioned baselines. For ReCap,
+`click_mouse` is the better first candidate because it is not saturated in the
+short eval, while `hammer_nail` may be too easy for measuring improvement.
