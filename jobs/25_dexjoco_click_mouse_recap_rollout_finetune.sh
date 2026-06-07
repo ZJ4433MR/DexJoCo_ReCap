@@ -6,7 +6,7 @@ source scripts/dexjoco_common.sh
 
 export MUJOCO_GL="${MUJOCO_GL:-egl}"
 export WANDB_MODE="${WANDB_MODE:-offline}"
-export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.65}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.90}"
 
 RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
@@ -17,14 +17,14 @@ DEXJOCO_PORT="${DEXJOCO_PORT:-8000}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
 DEXJOCO_ACP_SUFFIX="${DEXJOCO_ACP_SUFFIX:- Use the high-advantage successful strategy.}"
 DEXJOCO_RECAP_TRAIN_STEPS="${DEXJOCO_RECAP_TRAIN_STEPS:-500}"
-DEXJOCO_RECAP_BATCH_SIZE="${DEXJOCO_RECAP_BATCH_SIZE:-8}"
+DEXJOCO_RECAP_BATCH_SIZE="${DEXJOCO_RECAP_BATCH_SIZE:-1}"
 DEXJOCO_RECAP_WARMUP_STEPS="${DEXJOCO_RECAP_WARMUP_STEPS:-50}"
 DEXJOCO_RECAP_SAVE_INTERVAL="${DEXJOCO_RECAP_SAVE_INTERVAL:-250}"
 DEXJOCO_RECAP_EXP_NAME="${DEXJOCO_RECAP_EXP_NAME:-recap_success_rollout_acp}"
 
 OUT_DIR="$OUTPUT_DIR/dexjoco_click_mouse_recap_rollout_finetune"
 CONFIG_DIR="$OUT_DIR/configs"
-ROLLOUT_DATASET="$OUT_DIR/recap_success_rollouts.npz"
+ROLLOUT_DATASET="$RUN_ROOT/recap_success_rollouts.npz"
 SUMMARY="$OUT_DIR/summary.tsv"
 mkdir -p "$OUT_DIR" "$CONFIG_DIR"
 
@@ -219,6 +219,7 @@ conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" python "$EXP_DIR/sc
   --seed="$DEXJOCO_EVAL_SEED" \
   --episodes="$DEXJOCO_COLLECT_EPISODES" \
   --acp-suffix="$DEXJOCO_ACP_SUFFIX"
+cp "${ROLLOUT_DATASET%.npz}.summary.txt" "$OUT_DIR/recap_success_rollouts.summary.txt"
 
 stop_policy_server "$public_server_pid"
 
