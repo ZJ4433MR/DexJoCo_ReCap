@@ -188,12 +188,29 @@ PY
 }
 
 SERVER_PIDS=()
+server_group_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] && { kill -0 "$pid" >/dev/null 2>&1 || pgrep -g "$pid" >/dev/null 2>&1; }
+}
+
+kill_server_group() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  kill -- "-$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
+  for _ in {1..20}; do
+    if ! server_group_alive "$pid"; then
+      wait "$pid" >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 0.5
+  done
+  kill -9 -- "-$pid" >/dev/null 2>&1 || kill -9 "$pid" >/dev/null 2>&1 || true
+  wait "$pid" >/dev/null 2>&1 || true
+}
+
 cleanup_servers() {
   for pid in "${SERVER_PIDS[@]:-}"; do
-    if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-      kill "$pid" >/dev/null 2>&1 || true
-      wait "$pid" >/dev/null 2>&1 || true
-    fi
+    kill_server_group "$pid"
   done
   pkill -f "serve_policy.py --port=${DEXJOCO_PORT}" >/dev/null 2>&1 || true
 }
@@ -203,7 +220,7 @@ start_policy_server() {
   local policy_dir="$1"
   local log_path="$2"
   cd "$DEXJOCO_DIR/openpi"
-  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/serve_policy.py \
+  setsid conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/serve_policy.py \
     --port="$DEXJOCO_PORT" \
     policy:checkpoint \
     --policy.config="$DEXJOCO_TASK" \
@@ -211,20 +228,30 @@ start_policy_server() {
     > "$log_path" 2>&1 &
   local pid=$!
   SERVER_PIDS+=("$pid")
-  if ! wait_for_log_pattern "$log_path" "server listening on" 900; then
-    echo "[job] server did not become ready: $policy_dir" >&2
-    tail -200 "$log_path" >&2 || true
-    exit 1
-  fi
+  local start_ts
+  start_ts="$(date +%s)"
+  while true; do
+    if [[ -f "$log_path" ]] && grep -q "server listening on" "$log_path"; then
+      break
+    fi
+    if ! server_group_alive "$pid"; then
+      echo "[job] server exited before becoming ready: $policy_dir" >&2
+      tail -200 "$log_path" >&2 || true
+      exit 1
+    fi
+    if (( $(date +%s) - start_ts >= 900 )); then
+      echo "[job] server did not become ready: $policy_dir" >&2
+      tail -200 "$log_path" >&2 || true
+      exit 1
+    fi
+    sleep 5
+  done
   POLICY_SERVER_PID="$pid"
 }
 
 stop_policy_server() {
   local pid="$1"
-  if kill -0 "$pid" >/dev/null 2>&1; then
-    kill "$pid" >/dev/null 2>&1 || true
-    wait "$pid" >/dev/null 2>&1 || true
-  fi
+  kill_server_group "$pid"
 }
 
 echo "[job] starting public policy server for rollout collection"
