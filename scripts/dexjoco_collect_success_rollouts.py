@@ -22,6 +22,7 @@ from dexjoco_openpi_client.eval_dexjoco_openpi import (
 
 def _enqueue_action_chunk(actions_buffer, action_chunk: np.ndarray, timestamp: int, dual_arm: bool) -> None:
     action_queue: queue.Queue = queue.Queue()
+    action_chunk = np.asarray(action_chunk, dtype=np.float32).copy()
     action_queue.put(ActionChunk(action=action_chunk, timestamp=timestamp))
     receive_actions(action_queue, actions_buffer, timestamp, dual_arm)
 
