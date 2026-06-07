@@ -22,6 +22,7 @@ DEXJOCO_RECAP_FSDP_DEVICES="${DEXJOCO_RECAP_FSDP_DEVICES:-2}"
 DEXJOCO_RECAP_WARMUP_STEPS="${DEXJOCO_RECAP_WARMUP_STEPS:-50}"
 DEXJOCO_RECAP_SAVE_INTERVAL="${DEXJOCO_RECAP_SAVE_INTERVAL:-250}"
 DEXJOCO_RECAP_EXP_NAME="${DEXJOCO_RECAP_EXP_NAME:-recap_success_rollout_acp}"
+OPENPI_RECAP_LORA_ONLY="${OPENPI_RECAP_LORA_ONLY:-1}"
 
 OUT_DIR="$OUTPUT_DIR/dexjoco_click_mouse_recap_rollout_finetune"
 CONFIG_DIR="$OUT_DIR/configs"
@@ -68,6 +69,7 @@ import sys
 openpi_dir = Path(sys.argv[1])
 data_loader = openpi_dir / "src/openpi/training/data_loader.py"
 dexjoco_configs = openpi_dir / "src/openpi/training/dexjoco_configs.py"
+pi0_config = openpi_dir / "src/openpi/models/pi0_config.py"
 
 text = data_loader.read_text()
 if "class RecapRolloutDataset" not in text:
@@ -141,7 +143,24 @@ cfg_text = cfg_text.replace(
     'warmup_steps=int(os.environ.get("DEXJOCO_RECAP_WARMUP_STEPS", "10000")),',
 )
 dexjoco_configs.write_text(cfg_text)
-print("[job] patched OpenPI data loader for ReCap rollout NPZ")
+
+pi0_text = pi0_config.read_text()
+if "import os" not in pi0_text.splitlines()[:8]:
+    pi0_text = pi0_text.replace("import dataclasses\n", "import dataclasses\nimport os\n")
+lora_only_patch = '''    def get_freeze_filter(self) -> nnx.filterlib.Filter:
+        """Returns the freeze filter based on the model config."""
+        if os.environ.get("OPENPI_RECAP_LORA_ONLY", "0") == "1":
+            return nnx.Not(nnx_utils.PathRegex(".*lora.*"))
+'''
+if "OPENPI_RECAP_LORA_ONLY" not in pi0_text:
+    pi0_text = pi0_text.replace(
+        '''    def get_freeze_filter(self) -> nnx.filterlib.Filter:
+        """Returns the freeze filter based on the model config."""
+''',
+        lora_only_patch,
+    )
+pi0_config.write_text(pi0_text)
+print("[job] patched OpenPI data loader and LoRA-only ReCap train filter")
 PY
 }
 
@@ -229,6 +248,7 @@ patch_openpi_config_yaml
 
 export OPENPI_RECAP_ROLLOUT_NPZ="$ROLLOUT_DATASET"
 export DEXJOCO_RECAP_WARMUP_STEPS
+export OPENPI_RECAP_LORA_ONLY
 
 echo "[job] computing norm stats for ReCap rollout dataset"
 cd "$DEXJOCO_DIR/openpi"
@@ -237,7 +257,7 @@ conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/compu
   --batch-size="$DEXJOCO_RECAP_BATCH_SIZE" \
   --num-workers=0
 
-echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES"
+echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY"
 conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/train.py \
   "$DEXJOCO_TASK" \
   --exp-name="$DEXJOCO_RECAP_EXP_NAME" \
