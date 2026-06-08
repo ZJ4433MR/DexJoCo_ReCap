@@ -29,12 +29,21 @@ prepare_dexjoco_source() {
 
   if [[ ! -d "$DEXJOCO_DIR/.git" ]]; then
     echo "[dexjoco] cloning $DEXJOCO_REPO into $DEXJOCO_DIR"
-    if ! git clone --depth 1 "$DEXJOCO_REPO" "$DEXJOCO_DIR"; then
-      echo "[dexjoco] remote clone failed"
+    clone_ok=0
+    for attempt in 1 2 3; do
+      echo "[dexjoco] clone attempt $attempt"
+      if git -c http.version=HTTP/1.1 clone --depth 1 "$DEXJOCO_REPO" "$DEXJOCO_DIR"; then
+        clone_ok=1
+        break
+      fi
       case "$DEXJOCO_DIR" in
         "$RUN_ROOT"/*) rm -rf "$DEXJOCO_DIR" ;;
         *) echo "[dexjoco] refusing to remove unexpected path: $DEXJOCO_DIR" >&2; return 2 ;;
       esac
+      sleep $((attempt * 5))
+    done
+    if [[ "$clone_ok" != "1" ]]; then
+      echo "[dexjoco] remote clone failed"
 
       if [[ ! -d "$DEXJOCO_LOCAL_SOURCE/.git" ]]; then
         echo "[dexjoco] no packaged fallback source found at $DEXJOCO_LOCAL_SOURCE" >&2
