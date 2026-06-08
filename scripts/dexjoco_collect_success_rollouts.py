@@ -7,6 +7,7 @@ import argparse
 from collections import deque
 from pathlib import Path
 import queue
+import signal
 
 import numpy as np
 import yaml
@@ -18,6 +19,27 @@ from dexjoco_openpi_client.eval_dexjoco_openpi import (
     _set_seed,
     receive_actions,
 )
+
+
+class InferenceTimeout(RuntimeError):
+    pass
+
+
+def _infer_with_timeout(client, obs, timeout_seconds: float):
+    if timeout_seconds <= 0 or not hasattr(signal, "setitimer"):
+        return client.infer(obs)
+
+    def _handle_timeout(signum, frame):  # noqa: ARG001
+        raise InferenceTimeout(f"policy inference exceeded {timeout_seconds:.1f}s")
+
+    old_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return client.infer(obs)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def _enqueue_action_chunk(actions_buffer, action_chunk: np.ndarray, timestamp: int, dual_arm: bool) -> None:
@@ -94,20 +116,39 @@ def collect(args: argparse.Namespace) -> None:
         env.start()
 
         for ep in range(args.episodes):
-            print(f"[collect] episode {ep + 1}/{args.episodes}")
+            print(f"[collect] episode {ep + 1}/{args.episodes}", flush=True)
             env.reset()
             if env_name == "click_mouse":
                 _initial_click_mouse_alignment(env)
 
             timestamp = 0
             actions_buffer = deque()
-            first_result = client.infer(env.get_obs())
+            try:
+                first_result = _infer_with_timeout(client, env.get_obs(), args.infer_timeout_seconds)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[collect] episode {ep + 1} inference_failed={type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+                client = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
+                episode_success_flags.append(False)
+                continue
             _enqueue_action_chunk(actions_buffer, first_result["actions"], timestamp, dual_arm)
 
             frames = []
+            inference_failed = False
             while timestamp < args.max_steps:
                 if not actions_buffer:
-                    result = client.infer(env.get_obs())
+                    try:
+                        result = _infer_with_timeout(client, env.get_obs(), args.infer_timeout_seconds)
+                    except Exception as exc:  # noqa: BLE001
+                        print(
+                            f"[collect] episode {ep + 1} inference_failed={type(exc).__name__}: {exc}",
+                            flush=True,
+                        )
+                        client = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
+                        inference_failed = True
+                        break
                     _enqueue_action_chunk(actions_buffer, result["actions"], timestamp, dual_arm)
 
                 obs_before = env.get_obs()
@@ -128,13 +169,23 @@ def collect(args: argparse.Namespace) -> None:
                     break
 
                 if len(actions_buffer) < args.replan_ratio * action_horizon:
-                    result = client.infer(env.get_obs())
+                    try:
+                        result = _infer_with_timeout(client, env.get_obs(), args.infer_timeout_seconds)
+                    except Exception as exc:  # noqa: BLE001
+                        print(
+                            f"[collect] episode {ep + 1} inference_failed={type(exc).__name__}: {exc}",
+                            flush=True,
+                        )
+                        client = websocket_client_policy.WebsocketClientPolicy(host=args.host, port=args.port)
+                        inference_failed = True
+                        break
                     _enqueue_action_chunk(actions_buffer, result["actions"], timestamp, dual_arm)
 
-            episode_success_flags.append(bool(env.is_success))
-            print(f"[collect] episode {ep + 1} success={env.is_success} steps={len(frames)}")
-            if frames and (env.is_success or args.include_failures):
-                saved_episodes.append((frames, bool(env.is_success)))
+            is_success = bool(env.is_success) and not inference_failed
+            episode_success_flags.append(is_success)
+            print(f"[collect] episode {ep + 1} success={is_success} steps={len(frames)}", flush=True)
+            if frames and (is_success or args.include_failures):
+                saved_episodes.append((frames, is_success))
 
     finally:
         env.close()
@@ -213,6 +264,7 @@ def main() -> None:
     parser.add_argument("--collect-prompt-mode", choices=("base", "acp"), default="acp")
     parser.add_argument("--rand-full", action="store_true")
     parser.add_argument("--randomize-dynamics", action="store_true")
+    parser.add_argument("--infer-timeout-seconds", type=float, default=120.0)
     collect(parser.parse_args())
 
 
