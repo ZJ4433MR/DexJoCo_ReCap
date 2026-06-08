@@ -3,8 +3,9 @@
 ## Objective
 
 Move the ReCap simulation from PuSH-T to a language-conditioned VLA setting.
-The first target is DexJoCo single-arm `water_plant` with the OpenPI/pi0.5
-policy interface.
+The initial smoke target was DexJoCo single-arm `water_plant`; after the
+single-arm baseline matrix, the first ReCap target is `click_mouse` with the
+OpenPI/pi0.5 policy interface.
 
 This is closer to the pi0.6 ReCap setting than PuSH-T because the policy input
 contains:
@@ -15,6 +16,10 @@ contains:
 
 The prompt is passed into `DexJoCoOpenPIEnv.get_obs()` and then consumed by the
 OpenPI websocket policy server.
+
+For the current `click_mouse` ReCap run, the task prompt comes from
+`configs/rand_obj/click_mouse.yaml`, with an ACP suffix appended only for
+high-advantage frames and ACP evaluation.
 
 ## Why `water_plant` first
 
@@ -85,6 +90,23 @@ It is useful on this cluster because compute-node GitHub access has been
 unstable. The fallback source is copied only into the temporary run archive and
 is not committed to Git.
 
+Full DexJoCo ReCap value/advantage run:
+
+```powershell
+.\scripts\run_remote_l40_slurm.ps1 `
+  -ConfigPath configs\remote-l40.env `
+  -LocalDexJoCoPath .tmp\dexjoco-src `
+  -Job jobs/28_dexjoco_click_mouse_recap_full_value_advantage.sh `
+  -RunName dexjoco_click_mouse_recap_full_value_advantage_l40 `
+  -Time 12:00:00 `
+  -Memory 96G
+```
+
+This job collects base-prompt public pi0.5 rollouts, trains a lightweight
+DexJoCo value model, writes `value`, `value_target`, `dense_reward`,
+`advantage`, and `acp_indicator` fields into the rollout NPZ, then fine-tunes
+OpenPI with ACP prompt tags derived from `acp_indicator`.
+
 ## Current runs
 
 - `dexjoco_headless_smoke_l40_v4`: passed. The `water_plant` observation
@@ -112,21 +134,26 @@ store DexJoCo source, checkpoints, datasets, videos, or run outputs.
 
 ## ReCap integration path
 
-After the pretrained pi0.5 eval works, the ReCap stage should use the DexJoCo
-LeRobot dataset and the same language-conditioned OpenPI training code:
+The implemented DexJoCo NPZ path now reproduces the ReCap loop with local
+rollouts:
 
-1. Download a task dataset such as `water_plant` from
-   `DexJoCo/DexJoCo-Datasets-LeRobot`.
-2. Train or load a BC/OpenPI baseline for the task.
-3. Roll out the baseline in DexJoCo and collect success/reward traces.
-4. Train a value model on observations, prompt, action, and outcome labels.
-5. Infer value and n-step advantage labels for dataset frames.
-6. Convert advantage labels into language prompt tags for ACP training.
-7. Fine-tune the OpenPI policy and evaluate BC vs ReCap under the same seeds.
+1. Load the public OpenPI/pi0.5 checkpoint for `click_mouse`.
+2. Roll out the baseline in DexJoCo and collect both successful and failed
+   trajectories.
+3. Train a value model on RGB observations, proprioceptive state, action, and
+   normalized outcome labels.
+4. Infer value, dense reward, n-step advantage, and binary ACP indicators for
+   rollout frames.
+5. Convert positive indicators into ACP language prompt tags.
+6. Fine-tune the OpenPI policy and evaluate under the ACP prompt.
 
 Unlike PuSH-T, this stage can use actual prompt conditioning. The ACP prompt tag
 should therefore be injected into the task prompt rather than approximated only
 through positive-sample weighting.
+
+The next higher-fidelity step is to replace the compact NPZ rollout dataset
+with the official `DexJoCo/DexJoCo-Datasets-LeRobot` format and run Evo-RL's
+`pistar06` value stack directly.
 
 ## References
 

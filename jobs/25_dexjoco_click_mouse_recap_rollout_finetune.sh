@@ -25,6 +25,17 @@ DEXJOCO_RECAP_SAVE_INTERVAL="${DEXJOCO_RECAP_SAVE_INTERVAL:-250}"
 DEXJOCO_RECAP_EXP_NAME="${DEXJOCO_RECAP_EXP_NAME:-recap_success_rollout_acp}"
 DEXJOCO_RECAP_INCLUDE_FAILURES="${DEXJOCO_RECAP_INCLUDE_FAILURES:-0}"
 DEXJOCO_RECAP_COLLECT_PROMPT_MODE="${DEXJOCO_RECAP_COLLECT_PROMPT_MODE:-acp}"
+DEXJOCO_RECAP_LABEL_WITH_VALUE="${DEXJOCO_RECAP_LABEL_WITH_VALUE:-0}"
+DEXJOCO_RECAP_VALUE_EPOCHS="${DEXJOCO_RECAP_VALUE_EPOCHS:-8}"
+DEXJOCO_RECAP_VALUE_MAX_STEPS="${DEXJOCO_RECAP_VALUE_MAX_STEPS:-0}"
+DEXJOCO_RECAP_VALUE_BATCH_SIZE="${DEXJOCO_RECAP_VALUE_BATCH_SIZE:-64}"
+DEXJOCO_RECAP_VALUE_EVAL_BATCH_SIZE="${DEXJOCO_RECAP_VALUE_EVAL_BATCH_SIZE:-128}"
+DEXJOCO_RECAP_VALUE_IMAGE_SIZE="${DEXJOCO_RECAP_VALUE_IMAGE_SIZE:-96}"
+DEXJOCO_RECAP_VALUE_LR="${DEXJOCO_RECAP_VALUE_LR:-0.0003}"
+DEXJOCO_RECAP_VALUE_N_STEP="${DEXJOCO_RECAP_VALUE_N_STEP:-50}"
+DEXJOCO_RECAP_VALUE_POSITIVE_RATIO="${DEXJOCO_RECAP_VALUE_POSITIVE_RATIO:-0.3}"
+DEXJOCO_RECAP_VALUE_C_FAIL_COEF="${DEXJOCO_RECAP_VALUE_C_FAIL_COEF:-1.0}"
+DEXJOCO_RECAP_VALUE_EXACT_TOP_K="${DEXJOCO_RECAP_VALUE_EXACT_TOP_K:-0}"
 OPENPI_RECAP_LORA_ONLY="${OPENPI_RECAP_LORA_ONLY:-1}"
 OPENPI_RECAP_BASE_REPEAT="${OPENPI_RECAP_BASE_REPEAT:-0}"
 OPENPI_RECAP_POSITIVE_REPEAT="${OPENPI_RECAP_POSITIVE_REPEAT:-1}"
@@ -32,6 +43,7 @@ OPENPI_RECAP_POSITIVE_REPEAT="${OPENPI_RECAP_POSITIVE_REPEAT:-1}"
 OUT_DIR="$OUTPUT_DIR/dexjoco_click_mouse_recap_rollout_finetune"
 CONFIG_DIR="$OUT_DIR/configs"
 ROLLOUT_DATASET="$RUN_ROOT/recap_success_rollouts.npz"
+LABELED_ROLLOUT_DATASET="$RUN_ROOT/recap_value_advantage_rollouts.npz"
 SUMMARY="$OUT_DIR/summary.tsv"
 mkdir -p "$OUT_DIR" "$CONFIG_DIR"
 
@@ -77,6 +89,16 @@ dexjoco_configs = openpi_dir / "src/openpi/training/dexjoco_configs.py"
 pi0_config = openpi_dir / "src/openpi/models/pi0_config.py"
 
 text = data_loader.read_text()
+if "\nimport os\n" not in text:
+    if "import logging\n" in text:
+        text = text.replace("import logging\n", "import logging\nimport os\n", 1)
+    else:
+        text = "import os\n" + text
+if "\nimport numpy as np\n" not in text:
+    if "import os\n" in text:
+        text = text.replace("import os\n", "import os\nimport numpy as np\n", 1)
+    else:
+        text = "import numpy as np\n" + text
 if "class RecapRolloutDataset" not in text:
     marker = "\n\nclass FakeDataset(Dataset):"
     insert = r'''
@@ -93,6 +115,18 @@ class RecapRolloutDataset(Dataset):
         self._action = data["action"]
         self._episode_id = data["episode_id"]
         self._is_success = data["is_success"] if "is_success" in data else np.ones(len(self._action), dtype=np.bool_)
+        indicator_field = os.environ.get("OPENPI_RECAP_INDICATOR_FIELD", "acp_indicator")
+        if indicator_field in data:
+            raw_indicator = data[indicator_field]
+        elif "acp_indicator" in data:
+            raw_indicator = data["acp_indicator"]
+        else:
+            raw_indicator = self._is_success.astype(np.int64)
+        self._acp_indicator = np.asarray(raw_indicator).reshape(-1).astype(np.int64)
+        if len(self._acp_indicator) != len(self._action):
+            raise ValueError(
+                f"ACP indicator length {len(self._acp_indicator)} does not match actions {len(self._action)}"
+            )
         self._base_prompt = str(data["base_prompt"]) if "base_prompt" in data else str(data["prompt"])
         self._acp_prompt = str(data["acp_prompt"]) if "acp_prompt" in data else str(data["prompt"])
         self._action_horizon = action_horizon
@@ -100,21 +134,21 @@ class RecapRolloutDataset(Dataset):
         for episode_id in np.unique(self._episode_id):
             indices = np.flatnonzero(self._episode_id == episode_id)
             self._episode_end[int(episode_id)] = int(indices[-1]) + 1
-        base_repeat = int(os.environ.get("OPENPI_RECAP_BASE_REPEAT", "0"))
-        positive_repeat = int(os.environ.get("OPENPI_RECAP_POSITIVE_REPEAT", "1"))
+        base_repeat = max(0, int(os.environ.get("OPENPI_RECAP_BASE_REPEAT", "0")))
+        positive_repeat = max(1, int(os.environ.get("OPENPI_RECAP_POSITIVE_REPEAT", "1")))
         source_indices = []
         prompt_ids = []
         for idx in range(len(self._action)):
+            is_positive = bool(self._acp_indicator[idx])
+            source_indices.append(idx)
+            prompt_ids.append(1 if is_positive else 0)
             for _ in range(base_repeat):
                 source_indices.append(idx)
                 prompt_ids.append(0)
-            if bool(self._is_success[idx]):
-                for _ in range(positive_repeat):
+            if is_positive:
+                for _ in range(positive_repeat - 1):
                     source_indices.append(idx)
                     prompt_ids.append(1)
-        if not source_indices:
-            source_indices = list(range(len(self._action)))
-            prompt_ids = [1] * len(source_indices)
         self._source_indices = np.asarray(source_indices, dtype=np.int64)
         self._prompt_ids = np.asarray(prompt_ids, dtype=np.int8)
 
@@ -302,10 +336,37 @@ cp "${ROLLOUT_DATASET%.npz}.summary.txt" "$OUT_DIR/recap_success_rollouts.summar
 
 stop_policy_server "$public_server_pid"
 
+POLICY_ROLLOUT_DATASET="$ROLLOUT_DATASET"
+if [[ "$DEXJOCO_RECAP_LABEL_WITH_VALUE" == "1" ]]; then
+  value_label_args=(
+    --input "$ROLLOUT_DATASET"
+    --output "$LABELED_ROLLOUT_DATASET"
+    --model-output "$OUT_DIR/recap_value_model.pt"
+    --summary-output "$OUT_DIR/recap_value_advantage.summary.json"
+    --seed "$DEXJOCO_EVAL_SEED"
+    --epochs "$DEXJOCO_RECAP_VALUE_EPOCHS"
+    --max-steps "$DEXJOCO_RECAP_VALUE_MAX_STEPS"
+    --batch-size "$DEXJOCO_RECAP_VALUE_BATCH_SIZE"
+    --eval-batch-size "$DEXJOCO_RECAP_VALUE_EVAL_BATCH_SIZE"
+    --image-size "$DEXJOCO_RECAP_VALUE_IMAGE_SIZE"
+    --lr "$DEXJOCO_RECAP_VALUE_LR"
+    --n-step "$DEXJOCO_RECAP_VALUE_N_STEP"
+    --positive-ratio "$DEXJOCO_RECAP_VALUE_POSITIVE_RATIO"
+    --c-fail-coef "$DEXJOCO_RECAP_VALUE_C_FAIL_COEF"
+  )
+  if [[ "$DEXJOCO_RECAP_VALUE_EXACT_TOP_K" == "1" ]]; then
+    value_label_args+=(--exact-top-k)
+  fi
+  echo "[job] training value model and labeling ReCap advantages"
+  python "$EXP_DIR/scripts/dexjoco_label_recap_rollouts.py" "${value_label_args[@]}"
+  POLICY_ROLLOUT_DATASET="$LABELED_ROLLOUT_DATASET"
+fi
+
 patch_openpi_for_recap_rollout_dataset
 patch_openpi_config_yaml
 
-export OPENPI_RECAP_ROLLOUT_NPZ="$ROLLOUT_DATASET"
+export OPENPI_RECAP_ROLLOUT_NPZ="$POLICY_ROLLOUT_DATASET"
+export OPENPI_RECAP_INDICATOR_FIELD="${OPENPI_RECAP_INDICATOR_FIELD:-acp_indicator}"
 export DEXJOCO_RECAP_WARMUP_STEPS
 export OPENPI_RECAP_LORA_ONLY
 export OPENPI_RECAP_BASE_REPEAT
@@ -318,7 +379,7 @@ conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/compu
   --batch-size="$DEXJOCO_RECAP_BATCH_SIZE" \
   --num-workers=0
 
-echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY base_repeat=$OPENPI_RECAP_BASE_REPEAT positive_repeat=$OPENPI_RECAP_POSITIVE_REPEAT include_failures=$DEXJOCO_RECAP_INCLUDE_FAILURES collect_prompt=$DEXJOCO_RECAP_COLLECT_PROMPT_MODE mem_fraction=$XLA_PYTHON_CLIENT_MEM_FRACTION preallocate=$XLA_PYTHON_CLIENT_PREALLOCATE"
+echo "[job] training ReCap ACP policy steps=$DEXJOCO_RECAP_TRAIN_STEPS batch=$DEXJOCO_RECAP_BATCH_SIZE fsdp=$DEXJOCO_RECAP_FSDP_DEVICES lora_only=$OPENPI_RECAP_LORA_ONLY base_repeat=$OPENPI_RECAP_BASE_REPEAT positive_repeat=$OPENPI_RECAP_POSITIVE_REPEAT include_failures=$DEXJOCO_RECAP_INCLUDE_FAILURES collect_prompt=$DEXJOCO_RECAP_COLLECT_PROMPT_MODE label_with_value=$DEXJOCO_RECAP_LABEL_WITH_VALUE rollout_npz=$OPENPI_RECAP_ROLLOUT_NPZ indicator_field=$OPENPI_RECAP_INDICATOR_FIELD mem_fraction=$XLA_PYTHON_CLIENT_MEM_FRACTION preallocate=$XLA_PYTHON_CLIENT_PREALLOCATE"
 conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/train.py \
   "$DEXJOCO_TASK" \
   --exp-name="$DEXJOCO_RECAP_EXP_NAME" \
