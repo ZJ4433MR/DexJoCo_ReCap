@@ -218,20 +218,37 @@ def _binarize_advantages(
     advantages: np.ndarray,
     positive_ratio: float,
     exact_top_k: bool,
+    candidate_mask: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
     if not 0.0 < positive_ratio <= 1.0:
         raise ValueError("--positive-ratio must be within (0, 1].")
 
+    if candidate_mask is None:
+        candidate_indices = np.arange(advantages.shape[0], dtype=np.int64)
+    else:
+        candidate_mask = np.asarray(candidate_mask, dtype=np.bool_).reshape(-1)
+        if candidate_mask.shape[0] != advantages.shape[0]:
+            raise ValueError(
+                f"candidate_mask length {candidate_mask.shape[0]} does not match advantages {advantages.shape[0]}"
+            )
+        candidate_indices = np.flatnonzero(candidate_mask)
+
+    if candidate_indices.size == 0:
+        raise ValueError("No frames are eligible for ACP positive labeling.")
+
+    candidate_advantages = advantages[candidate_indices]
+    indicators = np.zeros(advantages.shape[0], dtype=np.int64)
+
     if exact_top_k:
-        k = max(1, int(round(float(advantages.shape[0]) * positive_ratio)))
-        order = np.argsort(-advantages)
-        indicators = np.zeros(advantages.shape[0], dtype=np.int64)
-        indicators[order[:k]] = 1
-        threshold = float(advantages[order[k - 1]])
+        k = max(1, int(round(float(candidate_indices.size) * positive_ratio)))
+        order = np.argsort(-candidate_advantages)
+        positive_indices = candidate_indices[order[:k]]
+        indicators[positive_indices] = 1
+        threshold = float(candidate_advantages[order[k - 1]])
         return indicators, threshold
 
-    threshold = float(np.quantile(advantages, 1.0 - positive_ratio))
-    indicators = (advantages >= threshold).astype(np.int64)
+    threshold = float(np.quantile(candidate_advantages, 1.0 - positive_ratio))
+    indicators[candidate_indices] = (candidate_advantages >= threshold).astype(np.int64)
     return indicators, threshold
 
 
@@ -371,10 +388,12 @@ def label_rollouts(args: argparse.Namespace) -> None:
         frame_indices=frame_indices,
         n_step=args.n_step,
     )
+    positive_candidate_mask = is_success if args.positive_success_only else None
     indicators, threshold = _binarize_advantages(
         advantages=advantages,
         positive_ratio=args.positive_ratio,
         exact_top_k=args.exact_top_k,
+        candidate_mask=positive_candidate_mask,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -403,6 +422,7 @@ def label_rollouts(args: argparse.Namespace) -> None:
             "recap_n_step": np.asarray(args.n_step, dtype=np.int32),
             "recap_positive_ratio": np.asarray(args.positive_ratio, dtype=np.float32),
             "recap_positive_threshold": np.asarray(threshold, dtype=np.float32),
+            "recap_positive_success_only": np.asarray(args.positive_success_only, dtype=np.bool_),
         }
     )
     np.savez_compressed(args.output, **arrays)
@@ -429,6 +449,13 @@ def label_rollouts(args: argparse.Namespace) -> None:
         "advantage_max": float(np.max(advantages)),
         "advantage_mean": float(np.mean(advantages)),
         "threshold": float(threshold),
+        "positive_success_only": bool(args.positive_success_only),
+        "indicator_candidate_count": int(np.sum(is_success)) if args.positive_success_only else int(values.shape[0]),
+        "indicator_candidate_positive_ratio": (
+            float(np.sum(indicators) / max(1, int(np.sum(is_success))))
+            if args.positive_success_only
+            else float(np.mean(indicators.astype(np.float32)))
+        ),
         "indicator_positive_ratio": float(np.mean(indicators.astype(np.float32))),
         "indicator_positive_count": int(np.sum(indicators)),
         "n_step": int(args.n_step),
@@ -467,6 +494,7 @@ def main() -> None:
     parser.add_argument("--positive-ratio", type=float, default=0.3)
     parser.add_argument("--c-fail-coef", type=float, default=1.0)
     parser.add_argument("--exact-top-k", action="store_true")
+    parser.add_argument("--positive-success-only", action="store_true")
     label_rollouts(parser.parse_args())
 
 
