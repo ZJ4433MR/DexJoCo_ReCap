@@ -46,6 +46,35 @@ dexjoco_kill_server_group() {
   wait "$pid" >/dev/null 2>&1 || true
 }
 
+dexjoco_remove_env_prefix() {
+  local env_prefix="$1"
+  RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
+  case "$env_prefix" in
+    "$RUN_ROOT"/conda_envs/*) rm -rf "$env_prefix" ;;
+    *) echo "[dexjoco] refusing to remove unexpected env path: $env_prefix" >&2; return 2 ;;
+  esac
+}
+
+dexjoco_conda_env_create_retry() {
+  local env_prefix="$1"
+  local env_file="$2"
+  local rc=0
+
+  for attempt in 1 2 3; do
+    echo "[dexjoco] conda env create attempt $attempt: $env_prefix"
+    if conda env create --prefix "$env_prefix" -f "$env_file"; then
+      return 0
+    fi
+    rc=$?
+    echo "[dexjoco] conda env create failed attempt $attempt rc=$rc" >&2
+    dexjoco_remove_env_prefix "$env_prefix" || true
+    conda clean -i -y >/dev/null 2>&1 || true
+    sleep $((attempt * 15))
+  done
+
+  return "$rc"
+}
+
 prepare_dexjoco_source() {
   RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
   DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
@@ -101,7 +130,7 @@ setup_dexjoco_env() {
   if [[ ! -x "$DEXJOCO_ENV_PREFIX/bin/python" ]]; then
     echo "[dexjoco] creating temporary conda env: $DEXJOCO_ENV_PREFIX"
     cd "$DEXJOCO_DIR"
-    conda env create --prefix "$DEXJOCO_ENV_PREFIX" -f environment-dexjoco.yaml
+    dexjoco_conda_env_create_retry "$DEXJOCO_ENV_PREFIX" environment-dexjoco.yaml
   else
     echo "[dexjoco] reusing conda env: $DEXJOCO_ENV_PREFIX"
   fi
@@ -115,7 +144,7 @@ setup_openpi_env() {
   if [[ ! -x "$OPENPI_ENV_PREFIX/bin/python" ]]; then
     echo "[dexjoco] creating temporary OpenPI conda env: $OPENPI_ENV_PREFIX"
     cd "$DEXJOCO_DIR/openpi"
-    conda env create --prefix "$OPENPI_ENV_PREFIX" -f environment-openpi.yaml
+    dexjoco_conda_env_create_retry "$OPENPI_ENV_PREFIX" environment-openpi.yaml
     conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python -m pip install --upgrade pip
     conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python -m pip install "huggingface-hub[cli]>=0.34,<0.36"
     conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python -m pip install lerobot --no-deps
