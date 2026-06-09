@@ -219,6 +219,8 @@ def _binarize_advantages(
     positive_ratio: float,
     exact_top_k: bool,
     candidate_mask: np.ndarray | None = None,
+    random_positive: bool = False,
+    seed: int = 0,
 ) -> tuple[np.ndarray, float]:
     if not 0.0 < positive_ratio <= 1.0:
         raise ValueError("--positive-ratio must be within (0, 1].")
@@ -238,6 +240,13 @@ def _binarize_advantages(
 
     candidate_advantages = advantages[candidate_indices]
     indicators = np.zeros(advantages.shape[0], dtype=np.int64)
+
+    if random_positive:
+        k = max(1, int(round(float(candidate_indices.size) * positive_ratio)))
+        rng = np.random.default_rng(seed)
+        positive_indices = rng.choice(candidate_indices, size=k, replace=False)
+        indicators[positive_indices] = 1
+        return indicators, float("nan")
 
     if exact_top_k:
         k = max(1, int(round(float(candidate_indices.size) * positive_ratio)))
@@ -394,6 +403,8 @@ def label_rollouts(args: argparse.Namespace) -> None:
         positive_ratio=args.positive_ratio,
         exact_top_k=args.exact_top_k,
         candidate_mask=positive_candidate_mask,
+        random_positive=args.random_positive,
+        seed=args.seed,
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -423,6 +434,7 @@ def label_rollouts(args: argparse.Namespace) -> None:
             "recap_positive_ratio": np.asarray(args.positive_ratio, dtype=np.float32),
             "recap_positive_threshold": np.asarray(threshold, dtype=np.float32),
             "recap_positive_success_only": np.asarray(args.positive_success_only, dtype=np.bool_),
+            "recap_random_positive": np.asarray(args.random_positive, dtype=np.bool_),
         }
     )
     np.savez_compressed(args.output, **arrays)
@@ -448,7 +460,7 @@ def label_rollouts(args: argparse.Namespace) -> None:
         "advantage_min": float(np.min(advantages)),
         "advantage_max": float(np.max(advantages)),
         "advantage_mean": float(np.mean(advantages)),
-        "threshold": float(threshold),
+        "threshold": None if args.random_positive else float(threshold),
         "positive_success_only": bool(args.positive_success_only),
         "indicator_candidate_count": int(np.sum(is_success)) if args.positive_success_only else int(values.shape[0]),
         "indicator_candidate_positive_ratio": (
@@ -462,6 +474,7 @@ def label_rollouts(args: argparse.Namespace) -> None:
         "positive_ratio_target": float(args.positive_ratio),
         "c_fail_coef": float(args.c_fail_coef),
         "exact_top_k": bool(args.exact_top_k),
+        "random_positive": bool(args.random_positive),
         "train_info": train_info,
     }
     summary_path = args.summary_output or args.output.with_suffix(".summary.json")
@@ -495,6 +508,7 @@ def main() -> None:
     parser.add_argument("--c-fail-coef", type=float, default=1.0)
     parser.add_argument("--exact-top-k", action="store_true")
     parser.add_argument("--positive-success-only", action="store_true")
+    parser.add_argument("--random-positive", action="store_true")
     label_rollouts(parser.parse_args())
 
 
