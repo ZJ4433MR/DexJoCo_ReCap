@@ -12,7 +12,7 @@ RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASKS="${DEXJOCO_TASKS:-click_mouse hammer_nail}"
 DEXJOCO_EVAL_EPISODES="${DEXJOCO_EVAL_EPISODES:-3}"
 DEXJOCO_EVAL_SEED="${DEXJOCO_EVAL_SEED:-0}"
-DEXJOCO_PORT_BASE="${DEXJOCO_PORT_BASE:-8000}"
+DEXJOCO_PORT_BASE="${DEXJOCO_PORT_BASE:-$(dexjoco_default_port_base)}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
 MATRIX_OUT_DIR="$OUTPUT_DIR/dexjoco_pi05_single_arm_matrix"
 MATRIX_SUMMARY="$MATRIX_OUT_DIR/summary.tsv"
@@ -27,12 +27,8 @@ SERVER_PIDS=()
 
 cleanup_servers() {
   for pid in "${SERVER_PIDS[@]:-}"; do
-    if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-      kill "$pid" >/dev/null 2>&1 || true
-      wait "$pid" >/dev/null 2>&1 || true
-    fi
+    dexjoco_kill_server_group "$pid"
   done
-  pkill -f "serve_policy.py --port=" >/dev/null 2>&1 || true
 }
 trap cleanup_servers EXIT
 
@@ -62,7 +58,7 @@ for task in $DEXJOCO_TASKS; do
 
   echo "[job] starting OpenPI server for $task"
   cd "$DEXJOCO_DIR/openpi"
-  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/serve_policy.py \
+  setsid conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python scripts/serve_policy.py \
     --port="$port" \
     policy:checkpoint \
     --policy.config="$task" \
@@ -111,8 +107,7 @@ for task in $DEXJOCO_TASKS; do
 
   if kill -0 "$server_pid" >/dev/null 2>&1; then
     echo "[job] stopping server for $task pid=$server_pid"
-    kill "$server_pid" >/dev/null 2>&1 || true
-    wait "$server_pid" >/dev/null 2>&1 || true
+    dexjoco_kill_server_group "$server_pid"
   fi
 done
 

@@ -13,6 +13,39 @@ _dexjoco_run_root() {
   cd "$EXP_DIR/../.." && pwd
 }
 
+dexjoco_default_port_base() {
+  local seed="${SLURM_JOB_ID:-${SLURM_JOBID:-$$}}"
+  seed="${seed//[^0-9]/}"
+  if [[ -z "$seed" ]]; then
+    seed="$$"
+  fi
+  echo $((20000 + (10#$seed % 30000)))
+}
+
+dexjoco_default_port() {
+  dexjoco_default_port_base
+}
+
+dexjoco_server_group_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] && { kill -0 "$pid" >/dev/null 2>&1 || pgrep -g "$pid" >/dev/null 2>&1; }
+}
+
+dexjoco_kill_server_group() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  kill -- "-$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
+  for _ in {1..20}; do
+    if ! dexjoco_server_group_alive "$pid"; then
+      wait "$pid" >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 0.5
+  done
+  kill -9 -- "-$pid" >/dev/null 2>&1 || kill -9 "$pid" >/dev/null 2>&1 || true
+  wait "$pid" >/dev/null 2>&1 || true
+}
+
 prepare_dexjoco_source() {
   RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
   DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
