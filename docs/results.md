@@ -35,6 +35,41 @@ Conclusion: increasing the dataset and BC training budget improves BC from the
 previous 28.0% to 50.0%. ReCap/ACP weighted fine-tuning still improves over the
 stronger BC baseline by `+12.0` percentage points.
 
+## PuSH-T ReCap step sweep
+
+Runs:
+
+- `pusht_recap_diffusion_full50k_w15_r7500_l40_v1`
+- `pusht_recap_diffusion_full50k_w15_r10000_l40_v1`
+
+Configuration:
+
+- Same full-data PuSH-T setup as `pusht_recap_diffusion_full50k_w15_l40_v1`
+- Dataset episodes: `0..205`
+- Policy: diffusion
+- BC policy steps: `50000`
+- Value model steps: `5000`
+- ACP-positive sample weight: `1.5`
+- Evaluation: `100` PuSH-T episodes
+- Swept variable: ReCap policy fine-tune steps, `7500` and `10000`
+
+Metrics:
+
+| Run | BC success | ReCap success | ReCap avg sum reward | ReCap avg max reward | Episodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| previous `5000` ReCap steps | 50.0% | 62.0% | 111.4149 | 0.9674 | 100 |
+| `7500` ReCap steps | 43.0% | 59.0% | 114.2485 | 0.9319 | 100 |
+| `10000` ReCap steps | 43.0% | 50.0% | 118.2711 | 0.9196 | 100 |
+
+Conclusion: increasing ReCap fine-tuning beyond `5000` steps did not improve
+success rate in this setting. `7500` steps remained useful over its same-run BC
+baseline, but was below the previous `5000`-step ReCap result; `10000` steps
+showed further degradation. These two sweep jobs reran the complete pipeline,
+including BC and value training, so they are not a perfectly controlled
+same-checkpoint step sweep. The trend still suggests that longer ReCap
+fine-tuning can overfit or pull the policy away from the useful behavior
+distribution, making `5000` steps the current best PuSH-T setting.
+
 ## First validated non-zero run
 
 Run: `pusht_recap_diffusion_weighted_ft_l40_v1`
