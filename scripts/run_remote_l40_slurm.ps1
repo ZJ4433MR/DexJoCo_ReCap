@@ -15,7 +15,8 @@ param(
     [int]$Cpus = 7,
     [string]$Memory = "64G",
     [string]$Time = "00:30:00",
-    [switch]$KeepRemote
+    [switch]$KeepRemote,
+    [switch]$SubmitOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -161,6 +162,29 @@ if ($SubmitText -notmatch "(\d+)") {
 }
 $JobId = $Matches[1]
 Write-Host "[local] Slurm job id: $JobId"
+
+$JobInfoPath = Join-Path $LocalResultDir "slurm_job.txt"
+@(
+    "run_name=$RunName"
+    "job_id=$JobId"
+    "remote_stage_dir=$RemoteStageDir"
+    "remote_export=$RemoteExport"
+    "remote_slurm_log=$($RemoteSlurmLog.Replace('%j', $JobId))"
+    "job_script=$Job"
+    "submitted_at=$(Get-Date -Format o)"
+) | Set-Content -Path $JobInfoPath -Encoding ASCII
+
+if ($SubmitOnly) {
+    Write-Host "[local] SubmitOnly=1, not waiting for Slurm completion or pulling full results."
+    Write-Host "[local] Job metadata written to $JobInfoPath"
+    foreach ($Path in @($LocalPackDir, $ArchivePath, $LocalSbatch)) {
+        if (Test-Path $Path) {
+            Remove-Item -LiteralPath $Path -Recurse -Force
+        }
+    }
+    Write-Host "[local] Done. Remote staging dir: $RemoteStageDir"
+    exit 0
+}
 
 while ($true) {
     Start-Sleep -Seconds 15

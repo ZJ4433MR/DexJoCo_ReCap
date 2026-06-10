@@ -12,11 +12,18 @@ export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
 DEXJOCO_EVAL_SEED="${DEXJOCO_EVAL_SEED:-0}"
+DEXJOCO_COLLECT_SEED="${DEXJOCO_COLLECT_SEED:-$DEXJOCO_EVAL_SEED}"
 DEXJOCO_COLLECT_EPISODES="${DEXJOCO_COLLECT_EPISODES:-20}"
 DEXJOCO_EVAL_EPISODES="${DEXJOCO_EVAL_EPISODES:-20}"
 DEXJOCO_PORT="${DEXJOCO_PORT:-$(dexjoco_default_port)}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
 DEXJOCO_ACP_SUFFIX="${DEXJOCO_ACP_SUFFIX:- Use the high-advantage successful strategy.}"
+DEXJOCO_RECAP_OUTPUT_NAME="${DEXJOCO_RECAP_OUTPUT_NAME:-dexjoco_click_mouse_recap_rollout_finetune}"
+DEXJOCO_RECAP_DATA_PREFIX="${DEXJOCO_RECAP_DATA_PREFIX:-recap}"
+DEXJOCO_RECAP_ROLLOUT_POLICY_DIR="${DEXJOCO_RECAP_ROLLOUT_POLICY_DIR:-../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK}"
+DEXJOCO_RECAP_PRETRAINED_MODEL_PATH="${DEXJOCO_RECAP_PRETRAINED_MODEL_PATH:-../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK/params}"
+DEXJOCO_RECAP_POOL_INPUTS="${DEXJOCO_RECAP_POOL_INPUTS:-}"
+DEXJOCO_RECAP_SKIP_EVAL="${DEXJOCO_RECAP_SKIP_EVAL:-0}"
 DEXJOCO_RECAP_TRAIN_STEPS="${DEXJOCO_RECAP_TRAIN_STEPS:-500}"
 DEXJOCO_RECAP_BATCH_SIZE="${DEXJOCO_RECAP_BATCH_SIZE:-2}"
 DEXJOCO_RECAP_FSDP_DEVICES="${DEXJOCO_RECAP_FSDP_DEVICES:-2}"
@@ -43,10 +50,11 @@ OPENPI_RECAP_LORA_ONLY="${OPENPI_RECAP_LORA_ONLY:-1}"
 OPENPI_RECAP_BASE_REPEAT="${OPENPI_RECAP_BASE_REPEAT:-0}"
 OPENPI_RECAP_POSITIVE_REPEAT="${OPENPI_RECAP_POSITIVE_REPEAT:-1}"
 
-OUT_DIR="$OUTPUT_DIR/dexjoco_click_mouse_recap_rollout_finetune"
+OUT_DIR="$OUTPUT_DIR/$DEXJOCO_RECAP_OUTPUT_NAME"
 CONFIG_DIR="$OUT_DIR/configs"
-ROLLOUT_DATASET="$RUN_ROOT/recap_success_rollouts.npz"
-LABELED_ROLLOUT_DATASET="$RUN_ROOT/recap_value_advantage_rollouts.npz"
+COLLECTED_ROLLOUT_DATASET="$RUN_ROOT/${DEXJOCO_RECAP_DATA_PREFIX}_collected_rollouts.npz"
+ROLLOUT_DATASET="$RUN_ROOT/${DEXJOCO_RECAP_DATA_PREFIX}_success_rollouts.npz"
+LABELED_ROLLOUT_DATASET="$RUN_ROOT/${DEXJOCO_RECAP_DATA_PREFIX}_value_advantage_rollouts.npz"
 SUMMARY="$OUT_DIR/summary.tsv"
 mkdir -p "$OUT_DIR" "$CONFIG_DIR"
 
@@ -228,7 +236,7 @@ PY
 }
 
 patch_openpi_config_yaml() {
-  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python - "$DEXJOCO_DIR/openpi/config.yaml" "$DEXJOCO_TASK" "$DEXJOCO_RECAP_BATCH_SIZE" "$DEXJOCO_RECAP_TRAIN_STEPS" <<'PY'
+  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" python - "$DEXJOCO_DIR/openpi/config.yaml" "$DEXJOCO_TASK" "$DEXJOCO_RECAP_BATCH_SIZE" "$DEXJOCO_RECAP_TRAIN_STEPS" "$DEXJOCO_RECAP_PRETRAINED_MODEL_PATH" <<'PY'
 from pathlib import Path
 import sys
 import yaml
@@ -237,8 +245,9 @@ path = Path(sys.argv[1])
 task = sys.argv[2]
 batch_size = int(sys.argv[3])
 steps = int(sys.argv[4])
+pretrained_model_path = sys.argv[5]
 cfg = yaml.safe_load(path.read_text())
-cfg["pretrained_model_path"] = f"../checkpoints/pi05_dexjoco_ckpt/{task}/params"
+cfg["pretrained_model_path"] = pretrained_model_path
 cfg["ckpts_root"] = "../checkpoints/recap_acp_ckpts"
 cfg["wandb_enabled"] = False
 cfg["batch_size"] = batch_size
@@ -316,17 +325,17 @@ stop_policy_server() {
   kill_server_group "$pid"
 }
 
-echo "[job] starting public policy server for rollout collection"
-start_policy_server "../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK" "$OUT_DIR/public_server.log"
+echo "[job] starting policy server for rollout collection: $DEXJOCO_RECAP_ROLLOUT_POLICY_DIR"
+start_policy_server "$DEXJOCO_RECAP_ROLLOUT_POLICY_DIR" "$OUT_DIR/public_server.log"
 public_server_pid="$POLICY_SERVER_PID"
 
 cd "$DEXJOCO_DIR"
 collect_args=(
   --config="$base_config" \
-  --output="$ROLLOUT_DATASET" \
+  --output="$COLLECTED_ROLLOUT_DATASET" \
   --host="$DEXJOCO_HOST" \
   --port="$DEXJOCO_PORT" \
-  --seed="$DEXJOCO_EVAL_SEED" \
+  --seed="$DEXJOCO_COLLECT_SEED" \
   --episodes="$DEXJOCO_COLLECT_EPISODES" \
   --acp-suffix="$DEXJOCO_ACP_SUFFIX" \
   --collect-prompt-mode="$DEXJOCO_RECAP_COLLECT_PROMPT_MODE"
@@ -335,7 +344,19 @@ if [[ "$DEXJOCO_RECAP_INCLUDE_FAILURES" == "1" ]]; then
   collect_args+=(--include-failures)
 fi
 conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" python "$EXP_DIR/scripts/dexjoco_collect_success_rollouts.py" "${collect_args[@]}"
-cp "${ROLLOUT_DATASET%.npz}.summary.txt" "$OUT_DIR/recap_success_rollouts.summary.txt"
+cp "${COLLECTED_ROLLOUT_DATASET%.npz}.summary.txt" "$OUT_DIR/recap_success_rollouts.summary.txt"
+
+if [[ -n "$DEXJOCO_RECAP_POOL_INPUTS" ]]; then
+  read -r -a pool_inputs <<< "$DEXJOCO_RECAP_POOL_INPUTS"
+  echo "[job] merging ReCap data pool inputs: ${pool_inputs[*]} + $COLLECTED_ROLLOUT_DATASET"
+  python "$EXP_DIR/scripts/dexjoco_merge_rollout_npz.py" \
+    --output "$ROLLOUT_DATASET" \
+    --summary-output "$OUT_DIR/recap_data_pool.summary.json" \
+    "${pool_inputs[@]}" \
+    "$COLLECTED_ROLLOUT_DATASET"
+else
+  cp "$COLLECTED_ROLLOUT_DATASET" "$ROLLOUT_DATASET"
+fi
 
 stop_policy_server "$public_server_pid"
 
@@ -346,7 +367,7 @@ if [[ "$DEXJOCO_RECAP_LABEL_WITH_VALUE" == "1" ]]; then
     --output "$LABELED_ROLLOUT_DATASET"
     --model-output "$OUT_DIR/recap_value_model.pt"
     --summary-output "$OUT_DIR/recap_value_advantage.summary.json"
-    --seed "$DEXJOCO_EVAL_SEED"
+    --seed "$DEXJOCO_COLLECT_SEED"
     --epochs "$DEXJOCO_RECAP_VALUE_EPOCHS"
     --max-steps "$DEXJOCO_RECAP_VALUE_MAX_STEPS"
     --batch-size "$DEXJOCO_RECAP_VALUE_BATCH_SIZE"
@@ -407,6 +428,13 @@ if [[ -z "$RECAP_STEP" ]]; then
 fi
 RECAP_POLICY_DIR="$RECAP_CKPT_ROOT/$RECAP_STEP"
 echo "[job] final ReCap checkpoint: $RECAP_POLICY_DIR"
+
+if [[ "$DEXJOCO_RECAP_SKIP_EVAL" == "1" ]]; then
+  echo -e "method\tstatus\tsuccesses\tepisodes\tsuccess_rate_file\tcheckpoint_step" | tee "$SUMMARY"
+  echo -e "$DEXJOCO_RECAP_EXP_NAME\ttrain_only\tNA\tNA\tNA\t$RECAP_STEP" | tee -a "$SUMMARY"
+  echo "[job] skipping ReCap eval for train-only iterative round"
+  exit 0
+fi
 
 start_policy_server "$RECAP_POLICY_DIR" "$OUT_DIR/recap_server.log"
 recap_server_pid="$POLICY_SERVER_PID"
