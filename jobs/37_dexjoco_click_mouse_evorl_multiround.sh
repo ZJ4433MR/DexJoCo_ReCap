@@ -11,6 +11,7 @@ export DEXJOCO_EVO_ROUNDS="${DEXJOCO_EVO_ROUNDS:-3}"
 export DEXJOCO_EVO_MERGE_POOL="${DEXJOCO_EVO_MERGE_POOL:-1}"
 export DEXJOCO_EVO_INITIAL_COLLECT_EPISODES="${DEXJOCO_EVO_INITIAL_COLLECT_EPISODES:-0}"
 export DEXJOCO_EVO_INITIAL_COLLECT_SEED="${DEXJOCO_EVO_INITIAL_COLLECT_SEED:-$((DEXJOCO_EVAL_SEED + 10000))}"
+export DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES="${DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES:-100}"
 export DEXJOCO_EVO_INITIAL_POOL_INPUTS="${DEXJOCO_EVO_INITIAL_POOL_INPUTS:-}"
 export DEXJOCO_EVO_COLLECT_EPISODES="${DEXJOCO_EVO_COLLECT_EPISODES:-120}"
 export DEXJOCO_EVO_TRAIN_STEPS="${DEXJOCO_EVO_TRAIN_STEPS:-1200}"
@@ -66,22 +67,48 @@ if [[ "$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES" -gt 0 ]]; then
   initial_exp_name="recap_evorl_${mode}_${initial_tag}"
   initial_data_prefix="evorl_${mode}_${initial_tag}"
   initial_output_name="dexjoco_click_mouse_evorl_multiround_${mode}/initial_${initial_tag}"
-
-  echo "[evorl] collecting initial data pool D0 episodes=$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES seed=$DEXJOCO_EVO_INITIAL_COLLECT_SEED policy=$prev_policy_dir"
-  DEXJOCO_COLLECT_EPISODES="$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES" \
-  DEXJOCO_COLLECT_SEED="$DEXJOCO_EVO_INITIAL_COLLECT_SEED" \
-  DEXJOCO_RECAP_COLLECT_PROMPT_MODE="base" \
-  DEXJOCO_RECAP_OUTPUT_NAME="$initial_output_name" \
-  DEXJOCO_RECAP_DATA_PREFIX="$initial_data_prefix" \
-  DEXJOCO_RECAP_EXP_NAME="$initial_exp_name" \
-  DEXJOCO_RECAP_ROLLOUT_POLICY_DIR="$prev_policy_dir" \
-  DEXJOCO_RECAP_PRETRAINED_MODEL_PATH="$prev_pretrained_model_path" \
-  DEXJOCO_RECAP_POOL_INPUTS="" \
-  DEXJOCO_RECAP_SKIP_EVAL="1" \
-  DEXJOCO_RECAP_COLLECT_ONLY="1" \
-    bash jobs/25_dexjoco_click_mouse_recap_rollout_finetune.sh
-
   initial_npz="$RUN_ROOT/${initial_data_prefix}_collected_rollouts.npz"
+  initial_shard_npzs=()
+
+  echo "[evorl] collecting initial data pool D0 episodes=$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES seed=$DEXJOCO_EVO_INITIAL_COLLECT_SEED shard_episodes=$DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES policy=$prev_policy_dir"
+  remaining="$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES"
+  shard=0
+  while [[ "$remaining" -gt 0 ]]; do
+    if [[ "$DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES" -gt 0 && "$DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES" -lt "$remaining" ]]; then
+      shard_episodes="$DEXJOCO_EVO_INITIAL_COLLECT_SHARD_EPISODES"
+    else
+      shard_episodes="$remaining"
+    fi
+    shard_tag="$(printf '%s_s%02d' "$initial_tag" "$shard")"
+    shard_exp_name="recap_evorl_${mode}_${shard_tag}"
+    shard_data_prefix="evorl_${mode}_${shard_tag}"
+    shard_output_name="dexjoco_click_mouse_evorl_multiround_${mode}/initial_${shard_tag}"
+    shard_seed=$((DEXJOCO_EVO_INITIAL_COLLECT_SEED + shard))
+
+    echo "[evorl] collecting D0 shard=$shard episodes=$shard_episodes seed=$shard_seed"
+    DEXJOCO_COLLECT_EPISODES="$shard_episodes" \
+    DEXJOCO_COLLECT_SEED="$shard_seed" \
+    DEXJOCO_RECAP_COLLECT_PROMPT_MODE="base" \
+    DEXJOCO_RECAP_OUTPUT_NAME="$shard_output_name" \
+    DEXJOCO_RECAP_DATA_PREFIX="$shard_data_prefix" \
+    DEXJOCO_RECAP_EXP_NAME="$shard_exp_name" \
+    DEXJOCO_RECAP_ROLLOUT_POLICY_DIR="$prev_policy_dir" \
+    DEXJOCO_RECAP_PRETRAINED_MODEL_PATH="$prev_pretrained_model_path" \
+    DEXJOCO_RECAP_POOL_INPUTS="" \
+    DEXJOCO_RECAP_SKIP_EVAL="1" \
+    DEXJOCO_RECAP_COLLECT_ONLY="1" \
+      bash jobs/25_dexjoco_click_mouse_recap_rollout_finetune.sh
+
+    initial_shard_npzs+=("$RUN_ROOT/${shard_data_prefix}_collected_rollouts.npz")
+    remaining=$((remaining - shard_episodes))
+    shard=$((shard + 1))
+  done
+
+  echo "[evorl] merging D0 shards into $initial_npz: ${initial_shard_npzs[*]}"
+  python "$EXP_DIR/scripts/dexjoco_merge_rollout_npz.py" \
+    --output "$initial_npz" \
+    --summary-output "$OUT_BASE/initial_${initial_tag}_pool.summary.json" \
+    "${initial_shard_npzs[@]}"
   pool_inputs+=("$initial_npz")
   echo -e "0\t$mode\t$DEXJOCO_EVO_INITIAL_COLLECT_SEED\tbase\t$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES\t${#pool_inputs[@]}\tNA\tinitial_pool\tNA\tNA" | tee -a "$MULTI_SUMMARY"
 fi
