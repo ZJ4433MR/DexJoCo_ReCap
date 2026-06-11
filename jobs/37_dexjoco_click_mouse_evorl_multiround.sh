@@ -9,6 +9,9 @@ export DEXJOCO_EVAL_SEED="${DEXJOCO_EVAL_SEED:-0}"
 export DEXJOCO_EVAL_EPISODES="${DEXJOCO_EVAL_EPISODES:-100}"
 export DEXJOCO_EVO_ROUNDS="${DEXJOCO_EVO_ROUNDS:-3}"
 export DEXJOCO_EVO_MERGE_POOL="${DEXJOCO_EVO_MERGE_POOL:-1}"
+export DEXJOCO_EVO_INITIAL_COLLECT_EPISODES="${DEXJOCO_EVO_INITIAL_COLLECT_EPISODES:-0}"
+export DEXJOCO_EVO_INITIAL_COLLECT_SEED="${DEXJOCO_EVO_INITIAL_COLLECT_SEED:-$((DEXJOCO_EVAL_SEED + 10000))}"
+export DEXJOCO_EVO_INITIAL_POOL_INPUTS="${DEXJOCO_EVO_INITIAL_POOL_INPUTS:-}"
 export DEXJOCO_EVO_COLLECT_EPISODES="${DEXJOCO_EVO_COLLECT_EPISODES:-120}"
 export DEXJOCO_EVO_TRAIN_STEPS="${DEXJOCO_EVO_TRAIN_STEPS:-1200}"
 export DEXJOCO_EVO_POSITIVE_REPEAT="${DEXJOCO_EVO_POSITIVE_REPEAT:-5}"
@@ -51,6 +54,37 @@ echo -e "round\tmode\tcollect_seed\tcollect_prompt\tcollect_episodes\tpool_input
 prev_policy_dir="../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK"
 prev_pretrained_model_path="../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK/params"
 pool_inputs=()
+
+if [[ -n "$DEXJOCO_EVO_INITIAL_POOL_INPUTS" ]]; then
+  read -r -a initial_pool_inputs <<< "$DEXJOCO_EVO_INITIAL_POOL_INPUTS"
+  pool_inputs+=("${initial_pool_inputs[@]}")
+  echo "[evorl] loaded initial data pool inputs: ${initial_pool_inputs[*]}"
+fi
+
+if [[ "$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES" -gt 0 ]]; then
+  initial_tag="d00"
+  initial_exp_name="recap_evorl_${mode}_${initial_tag}"
+  initial_data_prefix="evorl_${mode}_${initial_tag}"
+  initial_output_name="dexjoco_click_mouse_evorl_multiround_${mode}/initial_${initial_tag}"
+
+  echo "[evorl] collecting initial data pool D0 episodes=$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES seed=$DEXJOCO_EVO_INITIAL_COLLECT_SEED policy=$prev_policy_dir"
+  DEXJOCO_COLLECT_EPISODES="$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES" \
+  DEXJOCO_COLLECT_SEED="$DEXJOCO_EVO_INITIAL_COLLECT_SEED" \
+  DEXJOCO_RECAP_COLLECT_PROMPT_MODE="base" \
+  DEXJOCO_RECAP_OUTPUT_NAME="$initial_output_name" \
+  DEXJOCO_RECAP_DATA_PREFIX="$initial_data_prefix" \
+  DEXJOCO_RECAP_EXP_NAME="$initial_exp_name" \
+  DEXJOCO_RECAP_ROLLOUT_POLICY_DIR="$prev_policy_dir" \
+  DEXJOCO_RECAP_PRETRAINED_MODEL_PATH="$prev_pretrained_model_path" \
+  DEXJOCO_RECAP_POOL_INPUTS="" \
+  DEXJOCO_RECAP_SKIP_EVAL="1" \
+  DEXJOCO_RECAP_COLLECT_ONLY="1" \
+    bash jobs/25_dexjoco_click_mouse_recap_rollout_finetune.sh
+
+  initial_npz="$RUN_ROOT/${initial_data_prefix}_collected_rollouts.npz"
+  pool_inputs+=("$initial_npz")
+  echo -e "0\t$mode\t$DEXJOCO_EVO_INITIAL_COLLECT_SEED\tbase\t$DEXJOCO_EVO_INITIAL_COLLECT_EPISODES\t${#pool_inputs[@]}\tNA\tinitial_pool\tNA\tNA" | tee -a "$MULTI_SUMMARY"
+fi
 
 for round in $(seq 1 "$DEXJOCO_EVO_ROUNDS"); do
   round_tag="$(printf 'r%02d' "$round")"
