@@ -371,6 +371,7 @@ fi
 
 POLICY_ROLLOUT_DATASET="$ROLLOUT_DATASET"
 if [[ "$DEXJOCO_RECAP_LABEL_WITH_VALUE" == "1" ]]; then
+  echo "[job] ReCap pool label bounds max_frames=$DEXJOCO_RECAP_POOL_MAX_FRAMES max_episodes=$DEXJOCO_RECAP_POOL_MAX_EPISODES keep_last_input=$DEXJOCO_RECAP_POOL_KEEP_LAST_INPUT"
   if [[ "$DEXJOCO_RECAP_POOL_MAX_FRAMES" -gt 0 || "$DEXJOCO_RECAP_POOL_MAX_EPISODES" -gt 0 ]]; then
     SAMPLED_ROLLOUT_DATASET="$RUN_ROOT/${DEXJOCO_RECAP_DATA_PREFIX}_sampled_rollouts.npz"
     sample_args=(
@@ -387,6 +388,10 @@ if [[ "$DEXJOCO_RECAP_LABEL_WITH_VALUE" == "1" ]]; then
     echo "[job] sampling ReCap pool for value labeling max_frames=$DEXJOCO_RECAP_POOL_MAX_FRAMES max_episodes=$DEXJOCO_RECAP_POOL_MAX_EPISODES keep_last_input=$DEXJOCO_RECAP_POOL_KEEP_LAST_INPUT"
     python "$EXP_DIR/scripts/dexjoco_sample_rollout_npz.py" "${sample_args[@]}"
     POLICY_ROLLOUT_DATASET="$SAMPLED_ROLLOUT_DATASET"
+  fi
+  if [[ "$POLICY_ROLLOUT_DATASET" == "$ROLLOUT_DATASET" && ( "$DEXJOCO_RECAP_POOL_MAX_FRAMES" -gt 0 || "$DEXJOCO_RECAP_POOL_MAX_EPISODES" -gt 0 ) ]]; then
+    echo "[job] expected sampled value-labeling pool, but POLICY_ROLLOUT_DATASET was not changed" >&2
+    exit 1
   fi
   value_label_args=(
     --input "$POLICY_ROLLOUT_DATASET"
