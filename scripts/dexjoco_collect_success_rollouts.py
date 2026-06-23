@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections import deque
 from pathlib import Path
 import queue
@@ -82,6 +83,57 @@ def _initial_click_mouse_alignment(env: DexJoCoOpenPIEnv) -> None:
         )
 
 
+def _write_rollout_npz(
+    output: Path,
+    saved_episodes: list[tuple[list[dict[str, np.ndarray]], bool]],
+    episode_success_flags: list[bool],
+    total_episodes: int,
+    prompt: str,
+    base_prompt: str,
+    acp_prompt: str,
+) -> dict[str, int]:
+    base_frames = []
+    wrist_frames = []
+    states = []
+    actions = []
+    episode_ids = []
+    frame_success = []
+    for episode_id, (frames, is_success) in enumerate(saved_episodes):
+        for frame in frames:
+            base_frames.append(frame["base"])
+            wrist_frames.append(frame["wrist"])
+            states.append(frame["state"])
+            actions.append(frame["action"])
+            episode_ids.append(episode_id)
+            frame_success.append(is_success)
+
+    success_count = sum(1 for _, is_success in saved_episodes if is_success)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        output,
+        base=np.asarray(base_frames, dtype=np.uint8),
+        wrist=np.asarray(wrist_frames, dtype=np.uint8),
+        state=np.asarray(states, dtype=np.float32),
+        action=np.asarray(actions, dtype=np.float32),
+        episode_id=np.asarray(episode_ids, dtype=np.int32),
+        is_success=np.asarray(frame_success, dtype=np.bool_),
+        prompt=np.asarray(acp_prompt),
+        base_prompt=np.asarray(base_prompt),
+        acp_prompt=np.asarray(acp_prompt),
+        collection_prompt=np.asarray(prompt),
+        total_episodes=np.asarray(total_episodes, dtype=np.int32),
+        saved_episodes=np.asarray(len(saved_episodes), dtype=np.int32),
+        successful_episodes=np.asarray(success_count, dtype=np.int32),
+        episode_success_flags=np.asarray(episode_success_flags, dtype=np.bool_),
+    )
+    return {
+        "total_episodes": int(total_episodes),
+        "saved_episodes": int(len(saved_episodes)),
+        "successful_episodes": int(success_count),
+        "total_frames": int(len(actions)),
+    }
+
+
 def collect(args: argparse.Namespace) -> None:
     _set_seed(args.seed)
 
@@ -110,7 +162,45 @@ def collect(args: argparse.Namespace) -> None:
 
     saved_episodes = []
     episode_success_flags = []
+    shard_paths: list[Path] = []
+    shard_summaries: list[dict[str, int | str]] = []
+    shard_start_episode = 0
     action_horizon = args.action_horizon
+
+    def flush_shard(force: bool = False) -> None:
+        nonlocal saved_episodes, episode_success_flags, shard_start_episode
+        if args.shard_episodes <= 0:
+            return
+        if not saved_episodes:
+            if force:
+                episode_success_flags = []
+            return
+        if not force and len(saved_episodes) < args.shard_episodes:
+            return
+        shard_index = len(shard_paths)
+        shard_dir = args.shard_dir or (args.output.parent / f"{args.output.stem}_shards")
+        shard_path = shard_dir / f"{args.output.stem}.shard_{shard_index:04d}.npz"
+        stats = _write_rollout_npz(
+            output=shard_path,
+            saved_episodes=saved_episodes,
+            episode_success_flags=episode_success_flags,
+            total_episodes=len(episode_success_flags),
+            prompt=prompt,
+            base_prompt=base_prompt,
+            acp_prompt=acp_prompt,
+        )
+        stats["path"] = str(shard_path)
+        stats["episode_start"] = int(shard_start_episode)
+        shard_paths.append(shard_path)
+        shard_summaries.append(stats)
+        print(
+            f"[collect] wrote shard {shard_index} episodes={stats['saved_episodes']} "
+            f"successes={stats['successful_episodes']} frames={stats['total_frames']} path={shard_path}",
+            flush=True,
+        )
+        shard_start_episode += len(episode_success_flags)
+        saved_episodes = []
+        episode_success_flags = []
 
     try:
         env.start()
@@ -186,65 +276,61 @@ def collect(args: argparse.Namespace) -> None:
             print(f"[collect] episode {ep + 1} success={is_success} steps={len(frames)}", flush=True)
             if frames and (is_success or args.include_failures):
                 saved_episodes.append((frames, is_success))
+            flush_shard()
 
     finally:
         env.close()
 
-    success_count = sum(1 for _, is_success in saved_episodes if is_success)
-    if success_count == 0:
-        raise RuntimeError("No successful episodes collected; cannot build ReCap dataset.")
+    flush_shard(force=True)
 
-    base_frames = []
-    wrist_frames = []
-    states = []
-    actions = []
-    episode_ids = []
-    frame_success = []
-    for episode_id, (frames, is_success) in enumerate(saved_episodes):
-        for frame in frames:
-            base_frames.append(frame["base"])
-            wrist_frames.append(frame["wrist"])
-            states.append(frame["state"])
-            actions.append(frame["action"])
-            episode_ids.append(episode_id)
-            frame_success.append(is_success)
+    success_count = sum(int(summary["successful_episodes"]) for summary in shard_summaries)
+    success_count += sum(1 for _, is_success in saved_episodes if is_success)
+    if success_count == 0 and not args.include_failures:
+        raise RuntimeError("No successful episodes collected; cannot build success-only ReCap dataset.")
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        args.output,
-        base=np.asarray(base_frames, dtype=np.uint8),
-        wrist=np.asarray(wrist_frames, dtype=np.uint8),
-        state=np.asarray(states, dtype=np.float32),
-        action=np.asarray(actions, dtype=np.float32),
-        episode_id=np.asarray(episode_ids, dtype=np.int32),
-        is_success=np.asarray(frame_success, dtype=np.bool_),
-        prompt=np.asarray(acp_prompt),
-        base_prompt=np.asarray(base_prompt),
-        acp_prompt=np.asarray(acp_prompt),
-        collection_prompt=np.asarray(prompt),
-        total_episodes=np.asarray(args.episodes, dtype=np.int32),
-        saved_episodes=np.asarray(len(saved_episodes), dtype=np.int32),
-        successful_episodes=np.asarray(success_count, dtype=np.int32),
-        episode_success_flags=np.asarray(episode_success_flags, dtype=np.bool_),
-    )
+    if shard_paths:
+        shard_list = args.output.with_suffix(".shards.txt")
+        shard_list.write_text("\n".join(str(path) for path in shard_paths) + "\n", encoding="utf-8")
+        manifest = args.output.with_suffix(".shards.json")
+        manifest.write_text(json.dumps(shard_summaries, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        total_frames = sum(int(summary["total_frames"]) for summary in shard_summaries)
+        saved_count = sum(int(summary["saved_episodes"]) for summary in shard_summaries)
+        print(f"[collect] wrote shard list {shard_list}")
+    else:
+        stats = _write_rollout_npz(
+            output=args.output,
+            saved_episodes=saved_episodes,
+            episode_success_flags=episode_success_flags,
+            total_episodes=args.episodes,
+            prompt=prompt,
+            base_prompt=base_prompt,
+            acp_prompt=acp_prompt,
+        )
+        total_frames = int(stats["total_frames"])
+        saved_count = int(stats["saved_episodes"])
+
+    if saved_count == 0 or total_frames == 0:
+        raise RuntimeError("No episodes were saved; cannot build a rollout dataset.")
 
     summary = args.output.with_suffix(".summary.txt")
     summary.write_text(
         "\n".join(
             [
                 f"total_episodes={args.episodes}",
-                f"saved_episodes={len(saved_episodes)}",
+                f"saved_episodes={saved_count}",
                 f"successful_episodes={success_count}",
-                f"total_frames={len(actions)}",
+                f"total_frames={total_frames}",
                 f"collection_prompt={prompt}",
                 f"base_prompt={base_prompt}",
                 f"acp_prompt={acp_prompt}",
+                f"shard_count={len(shard_paths)}",
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    print(f"[collect] wrote {args.output}")
+    if not shard_paths:
+        print(f"[collect] wrote {args.output}")
     print(summary.read_text(encoding="utf-8"))
 
 
@@ -265,6 +351,8 @@ def main() -> None:
     parser.add_argument("--rand-full", action="store_true")
     parser.add_argument("--randomize-dynamics", action="store_true")
     parser.add_argument("--infer-timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--shard-episodes", type=int, default=0)
+    parser.add_argument("--shard-dir", type=Path)
     collect(parser.parse_args())
 
 

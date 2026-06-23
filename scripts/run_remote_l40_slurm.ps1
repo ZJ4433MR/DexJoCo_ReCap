@@ -1,6 +1,7 @@
 param(
     [string]$ConfigPath = "",
     [string]$HostAlias = "hpc-hopper",
+    [string]$SshConfigPath = "",
     [string]$LocalEvoRlPath = "E:\Evo-RL-main\Evo-RL-main",
     [string]$LocalDexJoCoPath = "",
     [string]$Job = "jobs/00_remote_smoke.sh",
@@ -10,16 +11,31 @@ param(
     [string]$RemoteEnvSetup = "module load miniconda3/24.1.2 cuda/12.1 && source /share/apps/miniconda3/etc/profile.d/conda.sh && conda activate tj.pytorch2.2.1",
     [string]$RemoteBefore = "",
     [string]$HfToken = "",
+    [string]$HfTokenFile = "",
     [string]$Partition = "L40",
     [string]$Gres = "gpu:l40:1",
+    [string]$Exclude = "",
+    [string]$RemoteExportMode = "",
     [int]$Cpus = 7,
     [string]$Memory = "64G",
     [string]$Time = "00:30:00",
+    [string]$Dependency = "",
     [switch]$KeepRemote,
     [switch]$SubmitOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+function Invoke-Checked {
+    param(
+        [string]$Label,
+        [scriptblock]$Command
+    )
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label failed with exit code $LASTEXITCODE"
+    }
+}
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 
@@ -45,6 +61,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
             "REMOTE_ENV_SETUP" { if (-not $ExplicitParams.ContainsKey("RemoteEnvSetup")) { $RemoteEnvSetup = $Value } }
             "REMOTE_BEFORE" { if (-not $ExplicitParams.ContainsKey("RemoteBefore")) { $RemoteBefore = $Value } }
             "HF_TOKEN" { if (-not $ExplicitParams.ContainsKey("HfToken")) { $HfToken = $Value } }
+            "HF_TOKEN_FILE" { if (-not $ExplicitParams.ContainsKey("HfTokenFile")) { $HfTokenFile = $Value } }
             "SLURM_PARTITION" { if (-not $ExplicitParams.ContainsKey("Partition")) { $Partition = $Value } }
             "SLURM_GRES" { if (-not $ExplicitParams.ContainsKey("Gres")) { $Gres = $Value } }
             "SLURM_CPUS" { if (-not $ExplicitParams.ContainsKey("Cpus")) { $Cpus = [int]$Value } }
@@ -62,6 +79,14 @@ if (-not (Test-Path $JobPath)) {
 
 if ([string]::IsNullOrWhiteSpace($RunName)) {
     $RunName = "recap_" + (Get-Date -Format "yyyyMMdd_HHmmss")
+}
+
+$SshArgs = @()
+$ScpArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($SshConfigPath)) {
+    $ResolvedSshConfigPath = (Resolve-Path $SshConfigPath).Path
+    $SshArgs += @("-F", $ResolvedSshConfigPath)
+    $ScpArgs += @("-F", $ResolvedSshConfigPath)
 }
 
 $TmpRoot = Join-Path $RepoRoot ".tmp"
@@ -95,7 +120,7 @@ if (-not [string]::IsNullOrWhiteSpace($LocalDexJoCoPath)) {
     $PackDexJoCo = Join-Path $PackExp ".local\dexjoco-src"
     New-Item -ItemType Directory -Force -Path (Split-Path $PackDexJoCo -Parent) | Out-Null
     Write-Host "[local] Packing DexJoCo fallback source from $ResolvedDexJoCoPath"
-    robocopy $ResolvedDexJoCoPath $PackDexJoCo /MIR /XD __pycache__ .pytest_cache /XF *.pyc | Out-Null
+    robocopy $ResolvedDexJoCoPath $PackDexJoCo /MIR /XD .git __pycache__ .pytest_cache /XF *.pyc | Out-Null
     $RoboCode = $LASTEXITCODE
     if ($RoboCode -ge 8) {
         throw "robocopy failed for DexJoCo fallback source with exit code $RoboCode"
@@ -108,7 +133,7 @@ if (Test-Path $ArchivePath) {
 
 Write-Host "[local] Creating archive $ArchivePath"
 Push-Location $LocalPackDir
-tar -czf $ArchivePath .
+Invoke-Checked "tar create archive" { tar -czf $ArchivePath . }
 Pop-Location
 
 $RemoteStageDir = "$RemoteStageBase/$RunName"
@@ -117,15 +142,37 @@ $RemoteRunner = "$RemoteStageDir/remote_train.sh"
 $RemoteSbatch = "$RemoteStageDir/submit.sbatch"
 $RemoteExport = "$RemoteStageDir/results.tar.gz"
 $RemoteSlurmLog = "$RemoteStageDir/slurm-%j.out"
+$RemoteHfTokenFile = "$RemoteStageDir/hf_token.secret"
+$DependencyLine = if ([string]::IsNullOrWhiteSpace($Dependency)) { "" } else { "#SBATCH --dependency=$Dependency" }
+$ExcludeLine = if ([string]::IsNullOrWhiteSpace($Exclude)) { "" } else { "#SBATCH --exclude=$Exclude" }
 
 Write-Host "[local] Creating remote staging dir $RemoteStageDir on $HostAlias"
-ssh $HostAlias "mkdir -p '$RemoteStageDir'"
+Invoke-Checked "ssh mkdir remote staging dir" { & ssh @SshArgs $HostAlias "mkdir -p '$RemoteStageDir'" }
 
 Write-Host "[local] Uploading archive and runner"
-scp $ArchivePath "${HostAlias}:$RemoteArchive"
-scp (Join-Path $RepoRoot "scripts\remote_train.sh") "${HostAlias}:$RemoteRunner"
+Invoke-Checked "scp archive" { & scp @ScpArgs $ArchivePath "${HostAlias}:$RemoteArchive" }
+Invoke-Checked "scp remote runner" { & scp @ScpArgs (Join-Path $RepoRoot "scripts\remote_train.sh") "${HostAlias}:$RemoteRunner" }
+Invoke-Checked "ssh verify uploaded archive and runner" {
+    & ssh @SshArgs $HostAlias "test -s '$RemoteArchive' && test -s '$RemoteRunner'"
+}
+
+$UseRemoteHfTokenFile = $false
+if (-not [string]::IsNullOrWhiteSpace($HfTokenFile)) {
+    $ResolvedHfTokenFile = (Resolve-Path $HfTokenFile).Path
+    Write-Host "[local] Uploading Hugging Face token secret for this job"
+    Invoke-Checked "scp Hugging Face token secret" { & scp @ScpArgs $ResolvedHfTokenFile "${HostAlias}:$RemoteHfTokenFile" }
+    Invoke-Checked "ssh chmod Hugging Face token secret" { & ssh @SshArgs $HostAlias "chmod 600 '$RemoteHfTokenFile'" }
+    $UseRemoteHfTokenFile = $true
+}
 
 $KeepRemoteValue = if ($KeepRemote) { "1" } else { "0" }
+$HfTokenExport = if ($UseRemoteHfTokenFile) {
+    "export HF_TOKEN=`$(tr -d '\r\n' < '$RemoteHfTokenFile'); rm -f '$RemoteHfTokenFile'"
+} elseif ([string]::IsNullOrWhiteSpace($HfToken)) {
+    "unset HF_TOKEN"
+} else {
+    "export HF_TOKEN='$HfToken'"
+}
 $SbatchContent = @"
 #!/usr/bin/env bash
 #SBATCH --job-name=recap-$RunName
@@ -137,13 +184,16 @@ $SbatchContent = @"
 #SBATCH --mem=$Memory
 #SBATCH --time=$Time
 #SBATCH --output=$RemoteSlurmLog
+$DependencyLine
+$ExcludeLine
 
 set -euo pipefail
 
 export REMOTE_BASE="$RemoteComputeBase"
 export REMOTE_ENV_SETUP='$RemoteEnvSetup'
 export REMOTE_BEFORE='$RemoteBefore'
-export HF_TOKEN='$HfToken'
+export REMOTE_EXPORT_MODE='$RemoteExportMode'
+$HfTokenExport
 export KEEP_REMOTE='$KeepRemoteValue'
 
 bash '$RemoteRunner' '$RunName' '$RemoteArchive' '$Job' '$RemoteExport'
@@ -152,10 +202,13 @@ bash '$RemoteRunner' '$RunName' '$RemoteArchive' '$Job' '$RemoteExport'
 $LocalSbatch = Join-Path $TmpRoot "$RunName.sbatch"
 $SbatchContentLf = $SbatchContent.Replace("`r`n", "`n")
 [System.IO.File]::WriteAllText($LocalSbatch, $SbatchContentLf, [System.Text.Encoding]::ASCII)
-scp $LocalSbatch "${HostAlias}:$RemoteSbatch"
+Invoke-Checked "scp sbatch script" { & scp @ScpArgs $LocalSbatch "${HostAlias}:$RemoteSbatch" }
 
 Write-Host "[local] Submitting Slurm job"
-$SubmitOutput = ssh $HostAlias "sbatch --parsable '$RemoteSbatch'"
+$SubmitOutput = & ssh @SshArgs $HostAlias "sbatch --parsable '$RemoteSbatch'"
+if ($LASTEXITCODE -ne 0) {
+    throw "ssh sbatch failed with exit code $LASTEXITCODE"
+}
 $SubmitText = ($SubmitOutput | Out-String).Trim()
 if ($SubmitText -notmatch "(\d+)") {
     throw "Could not parse Slurm job id from: $SubmitText"
@@ -188,7 +241,7 @@ if ($SubmitOnly) {
 
 while ($true) {
     Start-Sleep -Seconds 15
-    $State = ssh $HostAlias "squeue -j $JobId -h -o '%T' 2>/dev/null || true"
+    $State = & ssh @SshArgs $HostAlias "squeue -j $JobId -h -o '%T' 2>/dev/null || true"
     $StateText = ($State | Out-String).Trim()
     if ([string]::IsNullOrWhiteSpace($StateText)) {
         break
@@ -197,22 +250,22 @@ while ($true) {
 }
 
 Write-Host "[local] Slurm job finished; checking export"
-$ExportExists = ssh $HostAlias "test -f '$RemoteExport' && echo yes || echo no"
+$ExportExists = & ssh @SshArgs $HostAlias "test -f '$RemoteExport' && echo yes || echo no"
 if (($ExportExists | Out-String).Trim() -ne "yes") {
     Write-Warning "[local] Remote result archive not found. Pulling Slurm log if available."
-    scp "${HostAlias}:$RemoteStageDir/slurm-*.out" $LocalResultDir 2>$null
+    & scp @ScpArgs "${HostAlias}:$RemoteStageDir/slurm-*.out" $LocalResultDir 2>$null
     throw "Remote result archive not found: $RemoteExport"
 }
 
 Write-Host "[local] Pulling results to $LocalResultArchive"
-scp "${HostAlias}:$RemoteExport" $LocalResultArchive
+& scp @ScpArgs "${HostAlias}:$RemoteExport" $LocalResultArchive
 
 Write-Host "[local] Expanding results into $LocalResultDir"
 tar -xzf $LocalResultArchive -C $LocalResultDir
 
 if (-not $KeepRemote) {
     Write-Host "[local] Removing remote staging dir"
-    ssh $HostAlias "rm -rf '$RemoteStageDir'"
+    & ssh @SshArgs $HostAlias "rm -rf '$RemoteStageDir'"
 } else {
     Write-Host "[local] KEEP_REMOTE=1, leaving remote staging dir at $RemoteStageDir"
 }

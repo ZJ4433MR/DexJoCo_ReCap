@@ -16,6 +16,13 @@ export DEXJOCO_EVO_INITIAL_POOL_INPUTS="${DEXJOCO_EVO_INITIAL_POOL_INPUTS:-}"
 export DEXJOCO_EVO_COLLECT_EPISODES="${DEXJOCO_EVO_COLLECT_EPISODES:-120}"
 export DEXJOCO_EVO_TRAIN_STEPS="${DEXJOCO_EVO_TRAIN_STEPS:-1200}"
 export DEXJOCO_EVO_POSITIVE_REPEAT="${DEXJOCO_EVO_POSITIVE_REPEAT:-5}"
+export DEXJOCO_EVO_PROMPT_AGENTS="${DEXJOCO_EVO_PROMPT_AGENTS:-0}"
+export DEXJOCO_EVO_PROMPT_AGENT_IDS="${DEXJOCO_EVO_PROMPT_AGENT_IDS:-}"
+export DEXJOCO_EVO_PROMPT_BACKEND="${DEXJOCO_EVO_PROMPT_BACKEND:-heuristic}"
+export DEXJOCO_EVO_PROMPT_ALLOW_HEURISTIC_FALLBACK="${DEXJOCO_EVO_PROMPT_ALLOW_HEURISTIC_FALLBACK:-0}"
+export DEXJOCO_EVO_PROMPT_SELECTION_MODE="${DEXJOCO_EVO_PROMPT_SELECTION_MODE:-score}"
+export DEXJOCO_EVO_PROMPT_EVAL_EACH_ROUND="${DEXJOCO_EVO_PROMPT_EVAL_EACH_ROUND:-0}"
+export DEXJOCO_ACP_SUFFIX="${DEXJOCO_ACP_SUFFIX:- Use the high-advantage successful strategy.}"
 
 export DEXJOCO_RECAP_INCLUDE_FAILURES="${DEXJOCO_RECAP_INCLUDE_FAILURES:-0}"
 export DEXJOCO_RECAP_LABEL_WITH_VALUE="${DEXJOCO_RECAP_LABEL_WITH_VALUE:-1}"
@@ -50,6 +57,7 @@ fi
 OUT_BASE="$OUTPUT_DIR/dexjoco_click_mouse_evorl_multiround_${mode}"
 mkdir -p "$OUT_BASE"
 MULTI_SUMMARY="$OUT_BASE/multiround_summary.tsv"
+PROMPT_HISTORY="$OUT_BASE/prompt_history.jsonl"
 echo -e "round\tmode\tcollect_seed\tcollect_prompt\tcollect_episodes\tpool_inputs\tcheckpoint_step\teval_status\tsuccesses\tepisodes" | tee "$MULTI_SUMMARY"
 
 prev_policy_dir="../checkpoints/pi05_dexjoco_ckpt/$DEXJOCO_TASK"
@@ -126,7 +134,7 @@ for round in $(seq 1 "$DEXJOCO_EVO_ROUNDS"); do
     collect_prompt_mode="acp"
   fi
 
-  if [[ "$round" -lt "$DEXJOCO_EVO_ROUNDS" ]]; then
+  if [[ "$round" -lt "$DEXJOCO_EVO_ROUNDS" && ! ( "$DEXJOCO_EVO_PROMPT_AGENTS" == "1" && "$DEXJOCO_EVO_PROMPT_EVAL_EACH_ROUND" == "1" ) ]]; then
     skip_eval="1"
   else
     skip_eval="0"
@@ -138,11 +146,43 @@ for round in $(seq 1 "$DEXJOCO_EVO_ROUNDS"); do
     pool_input_string=""
   fi
 
-  echo "[evorl] round=$round/$DEXJOCO_EVO_ROUNDS mode=$mode collect_prompt=$collect_prompt_mode collect_seed=$collect_seed pool_inputs=${#pool_inputs[@]} rollout_policy=$prev_policy_dir pretrained=$prev_pretrained_model_path"
+  prompt_manifest=""
+  prompt_suffix_file=""
+  openpi_prompt_manifest="${OPENPI_RECAP_ACP_PROMPTS_FILE:-}"
+  if [[ "$DEXJOCO_EVO_PROMPT_AGENTS" == "1" ]]; then
+    prompt_manifest="$OUT_BASE/prompt_${round_tag}.json"
+    prompt_suffix_file="$OUT_BASE/prompt_${round_tag}.suffix.txt"
+    prompt_agent_args=(
+      --task "$DEXJOCO_TASK"
+      --round "$round"
+      --base-config "$DEXJOCO_DIR/configs/rand_obj/${DEXJOCO_TASK}.yaml"
+      --history "$PROMPT_HISTORY"
+      --output "$prompt_manifest"
+      --suffix-output "$prompt_suffix_file"
+      --backend "$DEXJOCO_EVO_PROMPT_BACKEND"
+      --selection-mode "$DEXJOCO_EVO_PROMPT_SELECTION_MODE"
+      --seed "$collect_seed"
+    )
+    if [[ "$DEXJOCO_EVO_PROMPT_ALLOW_HEURISTIC_FALLBACK" == "1" ]]; then
+      prompt_agent_args+=(--allow-heuristic-fallback)
+    fi
+    if [[ -n "$DEXJOCO_EVO_PROMPT_AGENT_IDS" ]]; then
+      read -r -a prompt_agent_ids <<< "$DEXJOCO_EVO_PROMPT_AGENT_IDS"
+      prompt_agent_args+=(--agent-ids "${prompt_agent_ids[@]}")
+    fi
+    python "$EXP_DIR/scripts/dexjoco_generate_multiagent_prompts.py" generate "${prompt_agent_args[@]}"
+    DEXJOCO_ACP_SUFFIX="$(< "$prompt_suffix_file")"
+    openpi_prompt_manifest="$prompt_manifest"
+    echo "[evorl] multi-agent prompt manifest=$prompt_manifest suffix=$DEXJOCO_ACP_SUFFIX"
+  fi
+
+  echo "[evorl] round=$round/$DEXJOCO_EVO_ROUNDS mode=$mode collect_prompt=$collect_prompt_mode collect_seed=$collect_seed pool_inputs=${#pool_inputs[@]} rollout_policy=$prev_policy_dir pretrained=$prev_pretrained_model_path prompt_agents=$DEXJOCO_EVO_PROMPT_AGENTS"
 
   DEXJOCO_COLLECT_EPISODES="$DEXJOCO_EVO_COLLECT_EPISODES" \
   DEXJOCO_COLLECT_SEED="$collect_seed" \
   DEXJOCO_RECAP_COLLECT_PROMPT_MODE="$collect_prompt_mode" \
+  DEXJOCO_ACP_SUFFIX="$DEXJOCO_ACP_SUFFIX" \
+  OPENPI_RECAP_ACP_PROMPTS_FILE="$openpi_prompt_manifest" \
   DEXJOCO_RECAP_OUTPUT_NAME="$output_name" \
   DEXJOCO_RECAP_DATA_PREFIX="$data_prefix" \
   DEXJOCO_RECAP_EXP_NAME="$exp_name" \
@@ -186,6 +226,18 @@ for round in $(seq 1 "$DEXJOCO_EVO_ROUNDS"); do
     episodes="$(echo "$line" | cut -f4)"
   fi
   echo -e "$round\t$mode\t$collect_seed\t$collect_prompt_mode\t$DEXJOCO_EVO_COLLECT_EPISODES\t${#pool_inputs[@]}\t$step\t$eval_status\t$successes\t$episodes" | tee -a "$MULTI_SUMMARY"
+
+  if [[ "$DEXJOCO_EVO_PROMPT_AGENTS" == "1" && -n "$prompt_manifest" ]]; then
+    python "$EXP_DIR/scripts/dexjoco_generate_multiagent_prompts.py" record-result \
+      --manifest "$prompt_manifest" \
+      --history "$PROMPT_HISTORY" \
+      --mode "$mode" \
+      --collect-seed "$collect_seed" \
+      --checkpoint-step "$step" \
+      --eval-status "$eval_status" \
+      --successes "$successes" \
+      --episodes "$episodes"
+  fi
 done
 
 echo "[evorl] DexJoCo click_mouse multi-round ReCap finished: $MULTI_SUMMARY"

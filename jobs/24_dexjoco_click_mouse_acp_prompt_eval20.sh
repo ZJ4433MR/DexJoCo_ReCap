@@ -12,7 +12,11 @@ RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
 DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
 DEXJOCO_EVAL_EPISODES="${DEXJOCO_EVAL_EPISODES:-20}"
 DEXJOCO_EVAL_SEED="${DEXJOCO_EVAL_SEED:-0}"
-DEXJOCO_PORT="${DEXJOCO_PORT:-8000}"
+DEXJOCO_RECAP_EVAL_SEEDS="${DEXJOCO_RECAP_EVAL_SEEDS:-}"
+DEXJOCO_RECAP_EVAL_VARIANTS="${DEXJOCO_RECAP_EVAL_VARIANTS:-baseline acp_positive}"
+DEXJOCO_RECAP_EVAL_TIMEOUT_SECONDS="${DEXJOCO_RECAP_EVAL_TIMEOUT_SECONDS:-3600}"
+DEXJOCO_RECAP_EVAL_RETRIES="${DEXJOCO_RECAP_EVAL_RETRIES:-1}"
+DEXJOCO_PORT="${DEXJOCO_PORT:-$(dexjoco_default_port)}"
 DEXJOCO_HOST="${DEXJOCO_HOST:-127.0.0.1}"
 DEXJOCO_ACP_SUFFIX="${DEXJOCO_ACP_SUFFIX:- Use the high-advantage successful strategy.}"
 
@@ -88,7 +92,14 @@ if ! wait_for_log_pattern "$server_log" "server listening on" 900; then
   exit 1
 fi
 
-echo -e "variant\tstatus\tsuccesses\tepisodes\tsuccess_rate_file\tconfig" | tee "$SUMMARY"
+if [[ -n "$DEXJOCO_RECAP_EVAL_SEEDS" ]]; then
+  read -r -a eval_seeds <<< "$DEXJOCO_RECAP_EVAL_SEEDS"
+else
+  eval_seeds=("$DEXJOCO_EVAL_SEED")
+fi
+read -r -a eval_variants <<< "$DEXJOCO_RECAP_EVAL_VARIANTS"
+
+echo -e "variant\tstatus\tsuccesses\tepisodes\tsuccess_rate_file\tconfig\teval_seed" | tee "$SUMMARY"
 
 infra_failures=0
 run_variant() {
@@ -98,39 +109,65 @@ run_variant() {
   local eval_log="$variant_out/eval.log"
   mkdir -p "$variant_out"
 
-  echo "[job] evaluating variant=$variant episodes=$DEXJOCO_EVAL_EPISODES"
-  cd "$DEXJOCO_DIR"
-  set +e
-  conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" dexjoco-openpi-eval \
-    --config="$config_path" \
-    --seed="$DEXJOCO_EVAL_SEED" \
-    --port="$DEXJOCO_PORT" \
-    --host="$DEXJOCO_HOST" \
-    --episodes="$DEXJOCO_EVAL_EPISODES" \
-    --output="$variant_out/episodes" \
-    2>&1 | tee "$eval_log"
-  local eval_status=${PIPESTATUS[0]}
-  set -e
+  for eval_seed in "${eval_seeds[@]}"; do
+    local seed_out="$variant_out/seed${eval_seed}"
+    echo "[job] evaluating variant=$variant seed=$eval_seed episodes=$DEXJOCO_EVAL_EPISODES"
+    cd "$DEXJOCO_DIR"
+    local eval_status=1
+    local attempt
+    for attempt in $(seq 1 $((DEXJOCO_RECAP_EVAL_RETRIES + 1))); do
+      rm -rf "$seed_out/episodes"
+      set +e
+      timeout --signal=TERM "${DEXJOCO_RECAP_EVAL_TIMEOUT_SECONDS}s" \
+        conda run --no-capture-output --prefix "$DEXJOCO_ENV_PREFIX" dexjoco-openpi-eval \
+          --config="$config_path" \
+          --seed="$eval_seed" \
+          --port="$DEXJOCO_PORT" \
+          --host="$DEXJOCO_HOST" \
+          --episodes="$DEXJOCO_EVAL_EPISODES" \
+          --output="$seed_out/episodes" \
+        2>&1 | tee "$variant_out/eval_seed${eval_seed}.attempt${attempt}.log"
+      eval_status=${PIPESTATUS[0]}
+      set -e
+      cat "$variant_out/eval_seed${eval_seed}.attempt${attempt}.log" > "$variant_out/eval_seed${eval_seed}.log"
+      if [[ "$eval_status" -eq 0 ]]; then
+        break
+      fi
+      echo "[job] eval failed/timeout variant=$variant seed=$eval_seed attempt=$attempt status=$eval_status"
+    done
 
-  local success_file
-  success_file="$(find "$variant_out/episodes" -maxdepth 1 -name 'success_rate_*.txt' -printf '%f\n' | sort | head -1 || true)"
-  local successes=0
-  local episodes="$DEXJOCO_EVAL_EPISODES"
-  if [[ "$success_file" =~ success_rate_([0-9]+)_([0-9]+)\.txt ]]; then
-    successes="${BASH_REMATCH[1]}"
-    episodes="${BASH_REMATCH[2]}"
-  fi
+    local success_file
+    success_file="$(find "$seed_out/episodes" -maxdepth 1 -name 'success_rate_*.txt' -printf '%f\n' | sort | head -1 || true)"
+    local successes=0
+    local episodes="$DEXJOCO_EVAL_EPISODES"
+    if [[ "$success_file" =~ success_rate_([0-9]+)_([0-9]+)\.txt ]]; then
+      successes="${BASH_REMATCH[1]}"
+      episodes="${BASH_REMATCH[2]}"
+    fi
 
-  local status="ok"
-  if [[ "$eval_status" -ne 0 ]]; then
-    status="eval_failed"
-    infra_failures=$((infra_failures + 1))
-  fi
-  echo -e "$variant\t$status\t$successes\t$episodes\t$success_file\t$config_path" | tee -a "$SUMMARY"
+    local status="ok"
+    if [[ "$eval_status" -ne 0 ]]; then
+      status="eval_failed"
+      infra_failures=$((infra_failures + 1))
+    fi
+    echo -e "$variant\t$status\t$successes\t$episodes\t$success_file\t$config_path\t$eval_seed" | tee -a "$SUMMARY"
+  done
 }
 
-run_variant "baseline" "$baseline_config"
-run_variant "acp_positive" "$acp_config"
+for variant in "${eval_variants[@]}"; do
+  case "$variant" in
+    baseline)
+      run_variant "baseline" "$baseline_config"
+      ;;
+    acp_positive)
+      run_variant "acp_positive" "$acp_config"
+      ;;
+    *)
+      echo "[job] unknown eval variant: $variant" >&2
+      exit 2
+      ;;
+  esac
+done
 
 if [[ "$infra_failures" -ne 0 ]]; then
   echo "[job] ACP prompt eval finished with infrastructure failures: $infra_failures" >&2

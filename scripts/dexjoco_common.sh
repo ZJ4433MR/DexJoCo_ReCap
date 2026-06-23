@@ -80,7 +80,7 @@ prepare_dexjoco_source() {
   DEXJOCO_DIR="${DEXJOCO_DIR:-$RUN_ROOT/dexjoco-src}"
   DEXJOCO_LOCAL_SOURCE="${DEXJOCO_LOCAL_SOURCE:-$EXP_DIR/.local/dexjoco-src}"
 
-  if [[ "$DEXJOCO_PREFER_LOCAL_SOURCE" == "1" && ! -d "$DEXJOCO_DIR/.git" && -d "$DEXJOCO_LOCAL_SOURCE/.git" ]]; then
+  if [[ "$DEXJOCO_PREFER_LOCAL_SOURCE" == "1" && ! -d "$DEXJOCO_DIR/.git" && ( -d "$DEXJOCO_LOCAL_SOURCE/.git" || -d "$DEXJOCO_LOCAL_SOURCE/openpi" ) ]]; then
     echo "[dexjoco] using packaged fallback source: $DEXJOCO_LOCAL_SOURCE"
     case "$DEXJOCO_DIR" in
       "$RUN_ROOT"/*) rm -rf "$DEXJOCO_DIR" ;;
@@ -107,7 +107,7 @@ prepare_dexjoco_source() {
     if [[ "$clone_ok" != "1" ]]; then
       echo "[dexjoco] remote clone failed"
 
-      if [[ ! -d "$DEXJOCO_LOCAL_SOURCE/.git" ]]; then
+      if [[ ! -d "$DEXJOCO_LOCAL_SOURCE/.git" && ! -d "$DEXJOCO_LOCAL_SOURCE/openpi" ]]; then
         echo "[dexjoco] no packaged fallback source found at $DEXJOCO_LOCAL_SOURCE" >&2
         return 128
       fi
@@ -117,9 +117,13 @@ prepare_dexjoco_source() {
   fi
 
   cd "$DEXJOCO_DIR"
-  git -c core.autocrlf=false fetch --depth 1 origin "$DEXJOCO_COMMIT" >/dev/null 2>&1 || true
-  git -c core.autocrlf=false checkout -q --detach "$DEXJOCO_COMMIT"
-  echo "[dexjoco] source commit: $(git rev-parse HEAD)"
+  if [[ -d "$DEXJOCO_DIR/.git" ]]; then
+    git -c core.autocrlf=false fetch --depth 1 origin "$DEXJOCO_COMMIT" >/dev/null 2>&1 || true
+    git -c core.autocrlf=false checkout -q --detach "$DEXJOCO_COMMIT"
+    echo "[dexjoco] source commit: $(git rev-parse HEAD)"
+  else
+    echo "[dexjoco] source commit: packaged non-git fallback"
+  fi
 }
 
 setup_dexjoco_env() {
@@ -218,6 +222,31 @@ download_dexjoco_pi05_checkpoint() {
       --local-dir "$DEXJOCO_DIR/checkpoints" \
       --include "$pattern"
   done
+}
+
+download_dexjoco_lerobot_dataset() {
+  RUN_ROOT="${RUN_ROOT:-$(_dexjoco_run_root)}"
+  OPENPI_ENV_PREFIX="${OPENPI_ENV_PREFIX:-$RUN_ROOT/conda_envs/openpi}"
+  DEXJOCO_HF_DATASET_REPO="${DEXJOCO_HF_DATASET_REPO:-DexJoCo/DexJoCo-Datasets-LeRobot}"
+  DEXJOCO_TASK="${DEXJOCO_TASK:-click_mouse}"
+  DEXJOCO_LEROBOT_DATASET_SUBDIR="${DEXJOCO_LEROBOT_DATASET_SUBDIR:-dexjoco_lerobot_datasets}"
+  DEXJOCO_LEROBOT_DATASET_DOWNLOAD_ROOT="${DEXJOCO_LEROBOT_DATASET_DOWNLOAD_ROOT:-$RUN_ROOT/dexjoco_official_lerobot}"
+
+  mkdir -p "$DEXJOCO_LEROBOT_DATASET_DOWNLOAD_ROOT"
+  echo "[dexjoco] downloading LeRobot dataset: $DEXJOCO_HF_DATASET_REPO $DEXJOCO_LEROBOT_DATASET_SUBDIR/$DEXJOCO_TASK"
+  conda run --no-capture-output --prefix "$OPENPI_ENV_PREFIX" hf download \
+    "$DEXJOCO_HF_DATASET_REPO" \
+    --repo-type dataset \
+    --local-dir "$DEXJOCO_LEROBOT_DATASET_DOWNLOAD_ROOT" \
+    --include "$DEXJOCO_LEROBOT_DATASET_SUBDIR/$DEXJOCO_TASK/**"
+
+  DEXJOCO_OFFICIAL_LEROBOT_ROOT="$DEXJOCO_LEROBOT_DATASET_DOWNLOAD_ROOT/$DEXJOCO_LEROBOT_DATASET_SUBDIR/$DEXJOCO_TASK"
+  if [[ ! -d "$DEXJOCO_OFFICIAL_LEROBOT_ROOT/meta" ]]; then
+    echo "[dexjoco] downloaded dataset root is missing meta/: $DEXJOCO_OFFICIAL_LEROBOT_ROOT" >&2
+    return 2
+  fi
+  export DEXJOCO_OFFICIAL_LEROBOT_ROOT
+  echo "[dexjoco] official LeRobot root: $DEXJOCO_OFFICIAL_LEROBOT_ROOT"
 }
 
 wait_for_port() {

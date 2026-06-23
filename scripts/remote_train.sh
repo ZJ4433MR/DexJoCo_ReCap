@@ -16,6 +16,7 @@ REMOTE_ENV_SETUP="${REMOTE_ENV_SETUP:-}"
 REMOTE_BEFORE="${REMOTE_BEFORE:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 KEEP_REMOTE="${KEEP_REMOTE:-0}"
+REMOTE_EXPORT_MODE="${REMOTE_EXPORT_MODE:-full}"
 
 RUN_DIR="${REMOTE_BASE}/${RUN_ID}"
 WORK_DIR="${RUN_DIR}/workspace"
@@ -42,13 +43,16 @@ export EVORL_DIR="$WORK_DIR/Evo-RL-main"
 export EXP_DIR="$WORK_DIR/recap-sim-l40"
 export OUTPUT_DIR="$RESULTS_DIR/outputs"
 export PYDEPS_DIR="$RUN_DIR/pydeps"
-export HF_HOME="$RUN_DIR/hf_home"
-export HF_DATASETS_CACHE="$RUN_DIR/hf_datasets"
-export TRANSFORMERS_CACHE="$RUN_DIR/transformers"
-export PIP_CACHE_DIR="$RUN_DIR/pip_cache"
+export HF_HOME="${HF_HOME:-$REMOTE_BASE/_shared_hf_home}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$REMOTE_BASE/_shared_hf_datasets}"
+export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$REMOTE_BASE/_shared_transformers}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$REMOTE_BASE/_shared_pip_cache}"
 export WANDB_DIR="$RESULTS_DIR/wandb"
 export PYTHONPATH="$PYDEPS_DIR:$EVORL_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HUB_ENABLE_HF_TRANSFER=0
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+export HF_HUB_DOWNLOAD_TIMEOUT="${HF_HUB_DOWNLOAD_TIMEOUT:-120}"
+export HF_HUB_ETAG_TIMEOUT="${HF_HUB_ETAG_TIMEOUT:-60}"
 
 mkdir -p "$OUTPUT_DIR" "$PYDEPS_DIR" "$HF_HOME" "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$WANDB_DIR"
 
@@ -96,7 +100,33 @@ echo "$JOB_STATUS" > "$RESULTS_DIR/exit_code.txt"
 cp "$LOG_DIR/system.log" "$RESULTS_DIR/system.log"
 cp "$LOG_DIR/job.log" "$RESULTS_DIR/job.log"
 
-echo "[remote] packing export: $EXPORT_PATH"
-tar -czhf "$EXPORT_PATH" -C "$RESULTS_DIR" .
+echo "[remote] packing export: $EXPORT_PATH mode=$REMOTE_EXPORT_MODE"
+if [[ "$REMOTE_EXPORT_MODE" == "minimal" ]]; then
+  MIN_EXPORT_DIR="$RUN_DIR/export_minimal"
+  rm -rf "$MIN_EXPORT_DIR"
+  mkdir -p "$MIN_EXPORT_DIR"
+
+  while IFS= read -r -d '' file; do
+    rel="${file#$RESULTS_DIR/}"
+    mkdir -p "$MIN_EXPORT_DIR/$(dirname "$rel")"
+    cp -a "$file" "$MIN_EXPORT_DIR/$rel"
+  done < <(
+    find "$RESULTS_DIR" -type f \
+      \( -name '*.json' -o -name '*.log' -o -name '*.tsv' -o -name '*.txt' -o -name '*.yaml' \) \
+      -print0
+  )
+
+  if [[ -d "$OUTPUT_DIR" ]]; then
+    while IFS= read -r -d '' dir; do
+      rel="${dir#$RESULTS_DIR/}"
+      mkdir -p "$MIN_EXPORT_DIR/$(dirname "$rel")"
+      cp -a "$dir" "$MIN_EXPORT_DIR/$rel"
+    done < <(find "$OUTPUT_DIR" -type d -path '*/export_checkpoints/*' -prune -print0)
+  fi
+
+  tar -czhf "$EXPORT_PATH" -C "$MIN_EXPORT_DIR" .
+else
+  tar -czhf "$EXPORT_PATH" -C "$RESULTS_DIR" .
+fi
 
 exit "$JOB_STATUS"

@@ -7,7 +7,9 @@ param(
     [string]$RemoteBase = "/tmp/`$USER/recap-sim-l40",
     [string]$RemoteEnvSetup = "source ~/miniconda3/etc/profile.d/conda.sh && conda activate evo-rl",
     [string]$RemoteBefore = "",
+    [string]$LocalDexJoCoPath = "",
     [string]$HfToken = "",
+    [string]$HfTokenFile = "",
     [switch]$KeepRemote
 )
 
@@ -35,6 +37,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
             "REMOTE_ENV_SETUP" { $RemoteEnvSetup = $Value }
             "REMOTE_BEFORE" { $RemoteBefore = $Value }
             "HF_TOKEN" { $HfToken = $Value }
+            "HF_TOKEN_FILE" { $HfTokenFile = $Value }
         }
     }
 }
@@ -75,6 +78,18 @@ if ($RoboCode -ge 8) {
     throw "robocopy failed for experiment repo with exit code $RoboCode"
 }
 
+if (-not [string]::IsNullOrWhiteSpace($LocalDexJoCoPath)) {
+    $ResolvedDexJoCoPath = (Resolve-Path $LocalDexJoCoPath).Path
+    $PackDexJoCo = Join-Path $PackExp ".local\dexjoco-src"
+    New-Item -ItemType Directory -Force -Path (Split-Path $PackDexJoCo -Parent) | Out-Null
+    Write-Host "[local] Packing DexJoCo fallback source from $ResolvedDexJoCoPath"
+    robocopy $ResolvedDexJoCoPath $PackDexJoCo /MIR /XD .git __pycache__ .pytest_cache /XF *.pyc | Out-Null
+    $RoboCode = $LASTEXITCODE
+    if ($RoboCode -ge 8) {
+        throw "robocopy failed for DexJoCo fallback source with exit code $RoboCode"
+    }
+}
+
 if (Test-Path $ArchivePath) {
     Remove-Item -LiteralPath $ArchivePath -Force
 }
@@ -88,6 +103,7 @@ $RemoteRunDir = "$RemoteBase/$RunName"
 $RemoteArchive = "$RemoteRunDir/incoming.tar.gz"
 $RemoteRunner = "$RemoteRunDir/remote_train.sh"
 $RemoteExport = "$RemoteBase/${RunName}_results.tar.gz"
+$RemoteHfTokenFile = "$RemoteRunDir/hf_token.secret"
 
 Write-Host "[local] Creating remote run dir $RemoteRunDir on $HostAlias"
 ssh $HostAlias "mkdir -p '$RemoteRunDir' '$RemoteBase'"
@@ -96,12 +112,28 @@ Write-Host "[local] Uploading archive and runner"
 scp $ArchivePath "${HostAlias}:$RemoteArchive"
 scp (Join-Path $RepoRoot "scripts\remote_train.sh") "${HostAlias}:$RemoteRunner"
 
+$UseRemoteHfTokenFile = $false
+if (-not [string]::IsNullOrWhiteSpace($HfTokenFile)) {
+    $ResolvedHfTokenFile = (Resolve-Path $HfTokenFile).Path
+    Write-Host "[local] Uploading Hugging Face token secret for this job"
+    scp $ResolvedHfTokenFile "${HostAlias}:$RemoteHfTokenFile"
+    ssh $HostAlias "chmod 600 '$RemoteHfTokenFile'"
+    $UseRemoteHfTokenFile = $true
+}
+
 $KeepRemoteValue = if ($KeepRemote) { "1" } else { "0" }
+$HfTokenExport = if ($UseRemoteHfTokenFile) {
+    "export HF_TOKEN=`$(tr -d '\r\n' < '$RemoteHfTokenFile'); rm -f '$RemoteHfTokenFile'"
+} elseif ([string]::IsNullOrWhiteSpace($HfToken)) {
+    "unset HF_TOKEN"
+} else {
+    "export HF_TOKEN='$HfToken'"
+}
 $RemoteCommand = @"
 export REMOTE_BASE='$RemoteBase'
 export REMOTE_ENV_SETUP='$RemoteEnvSetup'
 export REMOTE_BEFORE='$RemoteBefore'
-export HF_TOKEN='$HfToken'
+$HfTokenExport
 export KEEP_REMOTE='$KeepRemoteValue'
 bash '$RemoteRunner' '$RunName' '$RemoteArchive' '$Job' '$RemoteExport'
 "@
