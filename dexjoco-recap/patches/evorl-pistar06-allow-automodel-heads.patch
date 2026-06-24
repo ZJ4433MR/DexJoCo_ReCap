@@ -1,0 +1,37 @@
+diff --git a/src/lerobot/values/pistar06/modeling_pistar06.py b/src/lerobot/values/pistar06/modeling_pistar06.py
+--- a/src/lerobot/values/pistar06/modeling_pistar06.py
++++ b/src/lerobot/values/pistar06/modeling_pistar06.py
+@@
+-def _validate_loading_info(repo_id: str, model_label: str, loading_info: dict[str, list] | None) -> None:
++def _validate_loading_info(
++    repo_id: str,
++    model_label: str,
++    loading_info: dict[str, list] | None,
++    *,
++    allow_unexpected_only: bool = False,
++) -> None:
+@@
+     mismatched = loading_info.get("mismatched_keys", [])
+     if not missing and not unexpected and not mismatched:
+         return
++    if allow_unexpected_only and unexpected and not missing and not mismatched:
++        logging.warning(
++            "Ignoring %d unexpected pretrained keys for %s from '%s' while loading backbone: %s",
++            len(unexpected),
++            model_label,
++            repo_id,
++            unexpected[:8],
++        )
++        return
+     raise RuntimeError(
+         f"Pretrained weights for {model_label} from '{repo_id}' did not load cleanly: "
+         f"missing={len(missing)} unexpected={len(unexpected)} mismatched={len(mismatched)}. "
+@@
+     language_model, loading_info = AutoModel.from_pretrained(
+         repo_id,
+         revision=revision,
+         torch_dtype=dtype,
+         output_loading_info=True,
+     )
+-    _validate_loading_info(repo_id, "language_model(auto_model)", loading_info)
++    _validate_loading_info(repo_id, "language_model(auto_model)", loading_info, allow_unexpected_only=True)
