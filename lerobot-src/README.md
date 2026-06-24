@@ -1,4 +1,4 @@
-# 用于 DexJoCo ReCap 复现实验的 LeRobot 兼容源码
+# LeRobot 兼容源码
 
 这个目录包含本复现实验使用的 LeRobot 兼容源码，对应的实验脚本在
 `../dexjoco-recap` 中。
@@ -36,5 +36,5 @@ lerobot-dataset-report
 ../dexjoco-recap/docs/real_robot_data.md
 ```
 
-说明：这个源码目录基于公开 LeRobot 生态和 Evo-RL/ReCap 风格训练流程整理，并针对
-DexJoCo 复现实验做了本地适配。
+说明：这个源码目录基于公开 LeRobot 生态和 ReCap 风格训练流程整理，并针对
+DexJoCo 复现实验做了适配。

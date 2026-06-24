@@ -30,10 +30,10 @@ __pycache__/
 *.tar.gz
 *.zip
 
-Evo-RL-main/outputs/
-Evo-RL-main/wandb/
-Evo-RL-main/hf_cache/
-Evo-RL-main/.pytest_cache/
+lerobot-src/outputs/
+lerobot-src/wandb/
+lerobot-src/hf_cache/
+lerobot-src/.pytest_cache/
 dexjoco-recap/runs/
 dexjoco-recap/.local/
 dexjoco-recap/.tmp/

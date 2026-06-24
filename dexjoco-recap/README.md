@@ -1,6 +1,6 @@
 # DexJoCo 中 Evo-RL/ReCap 思路的复现实验
 
-这个目录包含我在 DexJoCo 仿真环境中复现 Evo-RL/ReCap 思路时使用的实验脚本。
+这个目录包含 DexJoCo 仿真环境中的 Evo-RL/ReCap 复现实验脚本。
 
 本项目不是官方 Evo-RL 仓库，而是面向 DexJoCo 的复现与适配。整体流程保留了
 ReCap 的核心闭环：
@@ -26,7 +26,7 @@ rollout 数据
 先从仓库根目录安装 LeRobot 兼容源码：
 
 ```bash
-cd ../Evo-RL-main
+cd ../lerobot-src
 conda create -y -n dexjoco-recap python=3.10
 conda activate dexjoco-recap
 python -m pip install -U pip
@@ -109,7 +109,7 @@ jobs/68_dexjoco_click_mouse_evorl_lerobot_E_multitag_episode_smooth.sh
 紧凑的 rollout NPZ 文件可以转换成本地 LeRobot 数据集：
 
 ```bash
-PYTHONPATH="../Evo-RL-main/src:$PYTHONPATH" \
+PYTHONPATH="../lerobot-src/src:$PYTHONPATH" \
 python scripts/dexjoco_npz_to_lerobot.py \
   --input runs/<run_name>/rollouts.npz \
   --output-root data/click_mouse_lerobot \
@@ -122,7 +122,7 @@ python scripts/dexjoco_npz_to_lerobot.py \
 多个 LeRobot 格式的数据池可以合并：
 
 ```bash
-PYTHONPATH="../Evo-RL-main/src:$PYTHONPATH" \
+PYTHONPATH="../lerobot-src/src:$PYTHONPATH" \
 python scripts/dexjoco_merge_lerobot_pool.py \
   --input local/base=data/base_pool \
   --input local/round1=data/round1_pool \
@@ -136,7 +136,7 @@ python scripts/dexjoco_merge_lerobot_pool.py \
 这里 faithful 的路径是通过 LeRobot 兼容代码训练 Pistar06 value model：
 
 ```bash
-cd ../Evo-RL-main
+cd ../lerobot-src
 PYTHONPATH="src:$PYTHONPATH" python -m lerobot.scripts.lerobot_value_train \
   --dataset.repo_id=local/click_mouse_pool \
   --dataset.root=../dexjoco-recap/data/click_mouse_pool \
@@ -247,17 +247,17 @@ dexjoco-openpi-eval \
 
 ## 接真机数据
 
-这个仓库不要求提供我训练好的 checkpoint。如果老师想用真机数据重新训练，只要真机
-数据已经整理成 LeRobot 格式，就可以把 DexJoCo 数据集参数换成真机数据：
+如果目标是在真机数据上重新训练，本仓库不要求提供预训练好的 checkpoint。只要真机
+数据已经整理成 LeRobot 格式，就可以把 DexJoCo 数据集参数替换成真机数据：
 
 ```text
 --dataset.repo_id=<real_robot_repo_or_local_id>
 --dataset.root=<optional_local_dataset_root>
 ```
 
-然后重新跑 value training、value inference 和 policy training。也就是说，老师如果
-是要“拿代码去训练真机数据”，需要的是代码、环境说明和数据格式说明，不需要我的
-checkpoint。
+然后重新运行 value training、value inference 和 policy training。也就是说，如果
+使用者要用新的真机数据训练，需要的是代码、环境说明和数据格式说明，而不是本仓库的
+训练 checkpoint。
 
 更具体的真机数据说明见：
 

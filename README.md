@@ -1,6 +1,6 @@
 # DexJoCo 中 Evo-RL/ReCap 思路的复现实验
 
-这个仓库是我整理后的项目代码，用于在 DexJoCo 仿真环境中复现
+本仓库是整理后的实验代码，用于在 DexJoCo 仿真环境中复现
 Evo-RL/ReCap 的训练思路。
 
 需要说明的是，这不是官方 Evo-RL 仓库，也不应该被当作官方实现使用。
@@ -12,7 +12,7 @@ Evo-RL/ReCap 的训练思路。
 - JAX/OpenPI 用于策略训练和策略服务。
 
 公开的实验脚本在 [`dexjoco-recap/`](dexjoco-recap/) 中。
-适配后的 LeRobot/Evo 风格源码在 [`Evo-RL-main/`](Evo-RL-main/) 中。
+适配后的 LeRobot 兼容源码在 [`lerobot-src/`](lerobot-src/) 中。
 
 ## 仓库结构
 
@@ -24,7 +24,7 @@ dexjoco-recap/
   scripts/
   docs/real_robot_data.md
 
-Evo-RL-main/
+lerobot-src/
   src/lerobot/
   pyproject.toml
 ```
@@ -36,7 +36,7 @@ Evo-RL-main/
 先安装 LeRobot 兼容源码：
 
 ```bash
-cd Evo-RL-main
+cd lerobot-src
 conda create -y -n dexjoco-recap python=3.10
 conda activate dexjoco-recap
 python -m pip install -U pip

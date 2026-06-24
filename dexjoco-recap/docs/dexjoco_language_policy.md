@@ -1,23 +1,22 @@
-# DexJoCo Language-Conditioned Policy Stage
+# DexJoCo 语言条件策略阶段
 
-The DexJoCo stage moves the ReCap reproduction from prompt-free control
-baselines to a language-conditioned VLA setting.
+DexJoCo 阶段把 ReCap 风格的复现实验从无 prompt 的控制 baseline，推进到语言条件
+VLA 设置。
 
-The main target used in this workspace is single-arm `click_mouse` with the
-OpenPI/pi0.5 policy interface. This setting is closer to the ReCap prompt
-conditioning idea because the policy input includes:
+本项目主要使用 single-arm `click_mouse` 任务和 OpenPI/pi0.5 策略接口。这个设置更
+接近 ReCap 中的 prompt conditioning 思路，因为策略输入包含：
 
-- RGB observations from base and wrist cameras.
-- Proprioceptive state.
-- A task prompt from the DexJoCo task config.
+- 来自 base 和 wrist 相机的 RGB observation。
+- 本体状态。
+- DexJoCo 任务配置中的 task prompt。
 
-For ACP runs, the prompt receives an additional tag such as:
+在 ACP 实验中，prompt 会额外加入一个 tag，例如：
 
 ```text
 Advantage: positive
 ```
 
-or, in multi-tag experiments:
+multi-tag 实验中则使用：
 
 ```text
 Advantage: failure
@@ -26,51 +25,49 @@ Advantage: medium
 Advantage: high
 ```
 
-## Implemented Path
+## 当前实现路径
 
-The current faithful LeRobot-format path is:
+当前较 faithful 的 LeRobot 格式路径如下：
 
-1. Download or prepare the official DexJoCo LeRobot-format task dataset.
-2. Mark initial demonstration episodes with `episode_success`.
-3. Merge the current data pool.
-4. Train a Pistar06 value model with the PyTorch/LeRobot-compatible source.
-5. Infer value, n-step advantage, and ACP indicators back into the dataset.
-6. Patch OpenPI at runtime to inject ACP prompt tags from the indicator field.
-7. Fine-tune the pi0.5 policy with JAX/OpenPI.
-8. Roll out the updated policy in DexJoCo and append new data.
-9. Repeat for multiple rounds, then evaluate the final checkpoint.
+1. 下载或准备 DexJoCo 的 LeRobot 格式任务数据集。
+2. 给初始 demonstration episodes 标注 `episode_success`。
+3. 合并当前数据池。
+4. 使用 PyTorch/LeRobot 兼容源码训练 Pistar06 value model。
+5. 把 value、n-step advantage 和 ACP indicator 推理回数据集。
+6. 运行时 patch OpenPI，从 indicator 字段向 prompt 注入 ACP tag。
+7. 使用 JAX/OpenPI 微调 pi0.5 策略。
+8. 在 DexJoCo 中 rollout 更新后的策略，并把新数据加入数据池。
+9. 重复多轮后评测最终 checkpoint。
 
-The orchestration entry point is:
+主要编排入口是：
 
 ```text
 jobs/57_dexjoco_click_mouse_evorl_lerobot_ab.sh
 ```
 
-The multi-tag variant is:
+multi-tag 版本是：
 
 ```text
 jobs/68_dexjoco_click_mouse_evorl_lerobot_E_multitag_episode_smooth.sh
 ```
 
-## Why `click_mouse`
+## 为什么选择 `click_mouse`
 
-Early single-arm evaluation showed `click_mouse` was a practical target for the
-first ReCap reproduction because the public pi0.5 baseline is non-zero but not
-saturated. That leaves room to test whether value-derived ACP labels and prompt
-conditioning change performance.
+早期 single-arm 评测显示，`click_mouse` 是一个适合做第一版 ReCap 复现实验的目标：
+公开 pi0.5 baseline 有非零成功率，但没有达到饱和，因此可以观察 value-derived ACP
+标签和 prompt conditioning 是否带来变化。
 
-## Data Formats
+## 数据格式
 
-Two data formats are supported:
+当前支持两种数据格式：
 
-- Compact DexJoCo rollout NPZ files for lightweight local value-labeling.
-- LeRobot-format datasets for the higher-fidelity Pistar06 value stack.
+- 紧凑的 DexJoCo rollout NPZ 文件，适合轻量级本地 value 标注。
+- LeRobot 格式数据集，适合更完整的 Pistar06 value training/inference 流程。
 
-The LeRobot path is preferred for new experiments because it matches the value
-training/inference pipeline more closely and makes it easier to swap in
-real-robot data later.
+后续新实验优先使用 LeRobot 路径，因为它和 value 训练/推理流程更一致，也更方便
+替换成真机数据。
 
-## References
+## 参考
 
 - DexJoCo: https://github.com/brave-eai/dexjoco
 - DexJoCo pi0.5 checkpoints: https://huggingface.co/DexJoCo/DexJoCo-Pi05

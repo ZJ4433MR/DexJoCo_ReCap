@@ -2,7 +2,7 @@ param(
     [string]$ConfigPath = "",
     [string]$HostAlias = "remote-gpu",
     [string]$SshConfigPath = "",
-    [string]$LocalEvoRlPath = "..\Evo-RL-main",
+    [string]$LocalLeRobotPath = "..\lerobot-src",
     [string]$LocalDexJoCoPath = "",
     [string]$Job = "jobs/00_remote_smoke.sh",
     [string]$RunName = "",
@@ -71,10 +71,10 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
     }
 }
 
-if (-not [System.IO.Path]::IsPathRooted($LocalEvoRlPath)) {
-    $LocalEvoRlPath = Join-Path $RepoRoot $LocalEvoRlPath
+if (-not [System.IO.Path]::IsPathRooted($LocalLeRobotPath)) {
+    $LocalLeRobotPath = Join-Path $RepoRoot $LocalLeRobotPath
 }
-$LocalEvoRlPath = (Resolve-Path $LocalEvoRlPath).Path
+$LocalLeRobotPath = (Resolve-Path $LocalLeRobotPath).Path
 $JobPath = Join-Path $RepoRoot $Job
 if (-not (Test-Path $JobPath)) {
     throw "Job script not found: $JobPath"
@@ -100,12 +100,12 @@ $LocalResultArchive = Join-Path $LocalResultDir "remote_results.tar.gz"
 
 New-Item -ItemType Directory -Force -Path $TmpRoot, $LocalPackDir, $LocalResultDir | Out-Null
 
-$PackEvoRl = Join-Path $LocalPackDir "lerobot-src"
+$PackLeRobot = Join-Path $LocalPackDir "lerobot-src"
 $PackExp = Join-Path $LocalPackDir "dexjoco-recap"
-New-Item -ItemType Directory -Force -Path $PackEvoRl, $PackExp | Out-Null
+New-Item -ItemType Directory -Force -Path $PackLeRobot, $PackExp | Out-Null
 
-Write-Host "[local] Packing LeRobot/Evo-compatible source from $LocalEvoRlPath"
-robocopy $LocalEvoRlPath $PackEvoRl /MIR /XD .git outputs wandb hf_cache .pytest_cache __pycache__ /XF *.pyc | Out-Null
+Write-Host "[local] Packing LeRobot-compatible source from $LocalLeRobotPath"
+robocopy $LocalLeRobotPath $PackLeRobot /MIR /XD .git outputs wandb hf_cache .pytest_cache __pycache__ /XF *.pyc | Out-Null
 $RoboCode = $LASTEXITCODE
 if ($RoboCode -ge 8) {
     throw "robocopy failed for LeRobot source with exit code $RoboCode"
