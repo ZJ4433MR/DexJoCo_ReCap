@@ -1,22 +1,20 @@
-# DexJoCo Evo-RL Reproduction
+# DexJoCo 中 Evo-RL/ReCap 思路的复现实验
 
-This repository is a cleaned project workspace for reproducing the Evo-RL/ReCap
-training idea in the DexJoCo simulation environment.
+这个仓库是我整理后的项目代码，用于在 DexJoCo 仿真环境中复现
+Evo-RL/ReCap 的训练思路。
 
-It is not the official Evo-RL repository. The implementation keeps the core
-ReCap loop, but adapts the data flow and training stack to DexJoCo:
+需要说明的是，这不是官方 Evo-RL 仓库，也不应该被当作官方实现使用。
+本仓库主要保留 ReCap 的核心训练循环，并根据 DexJoCo 的数据和训练流程做了适配：
 
-- DexJoCo and OpenPI/pi0.5 are used for language-conditioned simulation
-  rollouts, policy fine-tuning, and evaluation.
-- PyTorch/LeRobot-compatible code is used for dataset handling, value training,
-  value inference, advantage labeling, and ACP indicators.
-- JAX/OpenPI is used for the policy training and serving path.
+- DexJoCo 与 OpenPI/pi0.5 用于语言条件下的仿真 rollout、策略微调和评测。
+- PyTorch/LeRobot 兼容代码用于数据集处理、value model 训练、value 推理、
+  advantage 标注和 ACP indicator 生成。
+- JAX/OpenPI 用于策略训练和策略服务。
 
-The public-facing experiment code is in [`dexjoco-recap/`](dexjoco-recap/).
-The adapted LeRobot/Evo-compatible source tree is in
-[`Evo-RL-main/`](Evo-RL-main/).
+公开的实验脚本在 [`dexjoco-recap/`](dexjoco-recap/) 中。
+适配后的 LeRobot/Evo 风格源码在 [`Evo-RL-main/`](Evo-RL-main/) 中。
 
-## Repository Layout
+## 仓库结构
 
 ```text
 dexjoco-recap/
@@ -31,12 +29,11 @@ Evo-RL-main/
   pyproject.toml
 ```
 
-Older scratch work, generated run logs, upload manifests, and private remote
-configuration are intentionally excluded from the cleaned project view.
+旧的临时实验、生成日志、上传清单和私有远程配置没有放进整理后的仓库视图中。
 
-## Quick Start
+## 快速开始
 
-Install the LeRobot-compatible source:
+先安装 LeRobot 兼容源码：
 
 ```bash
 cd Evo-RL-main
@@ -46,25 +43,25 @@ python -m pip install -U pip
 python -m pip install -e .
 ```
 
-Then follow the experiment workflow in:
+具体实验流程、远程运行方式和训练命令见：
 
 ```text
 dexjoco-recap/README.md
 ```
 
-## Checkpoints
+## 关于 checkpoint
 
-No checkpoint from this repository is required if the goal is to train on a new
-dataset. For a new DexJoCo or real-robot dataset, replace the dataset path or
-`repo_id` in the value/policy training commands and train from that data.
+如果目的是在新的 DexJoCo 数据或真机数据上重新训练，则不需要本仓库提供训练好的
+checkpoint。只需要把 value/policy 训练命令中的数据集路径或 `repo_id` 换成新的
+数据集即可。
 
-A checkpoint is only needed when the goal is direct evaluation/deployment of a
-previously trained policy, or when skipping value/policy training and running
-only downstream inference.
+只有在以下情况才需要 checkpoint：
 
-## Acknowledgement
+- 直接评测或部署一个已经训练好的策略。
+- 跳过 value/policy 训练，只做后续推理或复现实验中的某个中间阶段。
 
-This project is a reproduction/adaptation built on public ideas and tooling from
-LeRobot, Evo-RL/ReCap, DexJoCo, and OpenPI. It should be cited as an independent
-reproduction workspace, not as the official implementation of any of those
-projects.
+## 致谢
+
+本项目是基于 LeRobot、Evo-RL/ReCap、DexJoCo 和 OpenPI 等公开工具与思路做的
+复现和适配。引用或介绍时，建议表述为独立的 DexJoCo 复现实验代码，而不是任何
+官方项目的实现。
