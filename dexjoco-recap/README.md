@@ -18,6 +18,8 @@ rollout 数据
 - JAX/OpenPI 负责 pi0.5 策略微调、策略服务和 DexJoCo 评测。
 - DexJoCo rollout 数据既可以保存为紧凑的 NPZ 文件，也可以转换成 LeRobot 格式数据集。
 
+这里的 value model 和 policy model 是两个不同概念。value model 只估计当前 frame/trajectory 的归一化 return，用于计算 advantage 和 ACP indicator；真正产生机器人动作的是后续 OpenPI/pi0.5 policy。ACP indicator 也不是环境 reward 本身，而是 value/advantage 后处理得到的训练标签，通常会被注入 prompt tag 或用于条件化策略训练。
+
 ## 目录说明
 
 ```text
@@ -39,6 +41,7 @@ dexjoco-recap/
 - `scripts/dexjoco_merge_lerobot_pool.py`：合并多轮 LeRobot 数据池，用于 ReCap 多轮训练。
 - `scripts/dexjoco_lerobot_set_episode_success.py`：给 LeRobot 数据写入或规范化 episode success 标签。
 - `scripts/dexjoco_openpi_lerobot_acp.sh`：给 OpenPI 的 LeRobot 数据读取流程打 patch，使 ACP indicator 可以注入到 prompt tag 中。
+- `scripts/dexjoco_label_recap_rollouts.py`：早期/轻量 NPZ 标注路径，内部包含一个 CNN 形式的 `RecapValueNet`。它用于快速在紧凑 NPZ 上训练 value 和写回 advantage，不等同于默认的 Pistar06 LeRobot value backend。
 - `docs/real_robot_data.md`：真机 LeRobot 数据训练说明，重点是 value/ACP 阶段的输入、命令和限制。
 - `docs/dexjoco_language_policy.md`：DexJoCo 语言策略与 OpenPI 评测相关说明。
 
@@ -151,7 +154,12 @@ python scripts/dexjoco_merge_lerobot_pool.py \
 
 ## Value Model 训练
 
-这里 faithful 的路径是通过 LeRobot 兼容代码训练 Pistar06 value model：
+本仓库中有两种 value model backend，容易被混淆：
+
+- 轻量 NPZ backend：`scripts/dexjoco_label_recap_rollouts.py` 里的 `RecapValueNet`，输入是 DexJoCo NPZ 中的 base/wrist 图像、state 和 action，图像部分使用 `nn.Conv2d`，因此它确实是 CNN。这个 backend 主要用于快速调通 NPZ 数据流和轻量标注。
+- Pistar06 backend：`../lerobot-src/src/lerobot/values/pistar06/` 里的 LeRobot-compatible value model，默认图像编码器是 SigLIP，语言编码器是 Gemma，然后接 value head。它对应 `--value.type=pistar06`，是更接近 Evo-RL/ReCap 的 faithful 路径，也是 LeRobot 数据和真机数据说明中默认推荐的路径。
+
+下面这个命令走的是 Pistar06 backend，不是轻量 CNN backend：
 
 ```bash
 cd ../lerobot-src
@@ -294,6 +302,8 @@ bash jobs/70_real_robot_lerobot_value_acp_template.sh
 ```
 
 这一条真机模板会完成 value training 和 value/advantage/ACP 写回。是否继续做 policy training，取决于真机数据是否已经有可用的 OpenPI dataset/action 配置；如果没有，需要先根据真实机器人的 action 维度、相机字段和控制接口适配 OpenPI。
+
+因此，真机数据侧最小需要准备的是 LeRobot 数据集本身、字段说明和成功标签。`jobs/70_real_robot_lerobot_value_acp_template.sh` 可以训练 Pistar06 value model 并写回 ACP 字段，但它不会替代真机采集、标定、控制和安全部署代码。
 
 更具体的真机数据说明见：
 
