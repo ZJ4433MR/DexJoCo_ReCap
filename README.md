@@ -11,6 +11,15 @@
 
 公开的实验脚本在 [`dexjoco-recap/`](dexjoco-recap/) 中；适配后的 LeRobot 兼容源码在 [`lerobot-src/`](lerobot-src/) 中。
 
+## 推荐阅读顺序
+
+如果是第一次看这个仓库，建议先按下面顺序读：
+
+1. [`dexjoco-recap/docs/full_workflow.md`](dexjoco-recap/docs/full_workflow.md)：从 D0 数据到 value model、ACP 标签、OpenPI/pi0.5 微调、回 DexJoCo 收集 rollout、再进入下一轮 pool 的完整闭环说明，也解释了各部分想法和代码来源。
+2. [`dexjoco-recap/README.md`](dexjoco-recap/README.md)：实验目录、环境安装、远程运行方式、主要 job 和常用命令。
+3. [`dexjoco-recap/docs/dexjoco_language_policy.md`](dexjoco-recap/docs/dexjoco_language_policy.md)：DexJoCo 语言条件策略、ACP prompt tag 和 OpenPI 评测路径。
+4. [`dexjoco-recap/docs/real_robot_data.md`](dexjoco-recap/docs/real_robot_data.md)：把 value/ACP 阶段迁移到真机 LeRobot 数据时需要准备什么、仓库能做什么、不能替代什么。
+
 整体上可以把仓库理解成三层：
 
 1. **DexJoCo 仿真实验层**：负责在仿真环境中收集 rollout、评测 pi0.5/OpenPI 策略，以及记录多轮 ReCap 实验结果。
@@ -40,7 +49,7 @@ lerobot-src/
 - [`dexjoco-recap/jobs/`](dexjoco-recap/jobs/)：可直接提交到远程机器的 job 脚本。前面的编号是实验顺序，包含 smoke test、DexJoCo baseline、ReCap 多轮训练、LeRobot 数据闭环，以及真机 LeRobot 数据的 value/ACP 模板。
 - [`dexjoco-recap/scripts/`](dexjoco-recap/scripts/)：通用工具脚本，包括远程打包提交、DexJoCo NPZ 转 LeRobot、数据池合并、episode success 标注、Pistar06 依赖准备、OpenPI ACP prompt patch 等。
 - [`dexjoco-recap/configs/remote.env.example`](dexjoco-recap/configs/remote.env.example)：远程机器配置模板。实际的 `remote.env` 里会包含 SSH alias、环境初始化命令和 Slurm 参数，不应提交到仓库。
-- [`dexjoco-recap/docs/`](dexjoco-recap/docs/)：补充说明文档，包括真机数据训练说明和 DexJoCo/OpenPI 语言策略说明。
+- [`dexjoco-recap/docs/`](dexjoco-recap/docs/)：补充说明文档，包括完整闭环说明、真机数据训练说明和 DexJoCo/OpenPI 语言策略说明。
 - [`lerobot-src/`](lerobot-src/)：本实验使用的 LeRobot 兼容源码。这里保留了 value training / value inference / dataset report 等入口，并加入了 ReCap 实验需要的 Pistar06 value 与 ACP 标注逻辑。
 
 旧的临时实验输出、日志、checkpoint、下载的 DexJoCo 源码、私有远程配置和与具体机器相关的路径都没有放进整理后的仓库视图中。
@@ -68,7 +77,13 @@ python -m pip install -U pip
 python -m pip install -e .
 ```
 
-具体实验流程、远程运行方式和训练命令见：
+如果想先理解“一次完整跑下来发生了什么”，优先看：
+
+```text
+dexjoco-recap/docs/full_workflow.md
+```
+
+具体实验目录、远程运行方式和训练命令见：
 
 ```text
 dexjoco-recap/README.md
@@ -117,4 +132,4 @@ dexjoco-recap/jobs/70_real_robot_lerobot_value_acp_template.sh
 
 ## 致谢
 
-本项目基于 LeRobot、Evo-RL/ReCap、DexJoCo 和 OpenPI 等公开工具与研究思路做复现和适配。引用或介绍时，建议表述为独立的 DexJoCo 复现实验代码，而不是任何官方项目的实现。
+本项目基于 [LeRobot](https://github.com/huggingface/lerobot)、[Evo-RL](https://github.com/MINT-SJTU/Evo-RL)、[DexJoCo](https://github.com/brave-eai/dexjoco) 和 [OpenPI](https://github.com/Physical-Intelligence/openpi) 等公开工具与研究思路做复现和适配。引用或介绍时，建议表述为独立的 DexJoCo 复现实验代码，而不是任何官方项目的实现。

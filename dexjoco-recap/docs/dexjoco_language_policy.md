@@ -39,6 +39,8 @@ Advantage: high
 8. 在 DexJoCo 中 rollout 更新后的策略，并把新数据加入数据池。
 9. 重复多轮后评测最终 checkpoint。
 
+更完整的逐步说明和来源边界见 [`full_workflow.md`](full_workflow.md)。
+
 主要编排入口是：
 
 ```text
