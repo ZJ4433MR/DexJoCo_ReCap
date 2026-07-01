@@ -96,6 +96,26 @@ dexjoco-recap/docs/real_robot_data.md
 dexjoco-recap/jobs/70_real_robot_lerobot_value_acp_template.sh
 ```
 
+## A-F 实验配置入口
+
+A-F 实验只对应 DexJoCo + LeRobot 格式的 ReCap 闭环实验。详细代码入口、wrapper job、环境变量配置和每个实验的差异说明见：
+
+```text
+dexjoco-recap/README.md
+```
+
+其中 A-E 已经有对应可运行 wrapper：
+
+```text
+A: jobs/58_dexjoco_click_mouse_evorl_lerobot_A_faithful.sh
+B: jobs/59_dexjoco_click_mouse_evorl_lerobot_B_base_collect.sh
+C: jobs/65_dexjoco_click_mouse_evorl_lerobot_C_base_collect_no_acp.sh
+D: jobs/66_dexjoco_click_mouse_evorl_lerobot_D_episode_topk_smooth.sh
+E: jobs/68_dexjoco_click_mouse_evorl_lerobot_E_multitag_episode_smooth.sh
+```
+
+当前公开仓库没有单独的 F wrapper；README 中将 F 标为预留/未落地配置，避免把不存在的实验入口写成已完成实验。
+
 ## 给真机数据使用者的交付边界
 
 如果其他使用者希望拿这份代码去训练新的真机数据，通常需要提供：

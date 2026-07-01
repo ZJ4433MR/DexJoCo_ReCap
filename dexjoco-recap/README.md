@@ -134,6 +134,201 @@ jobs/70_real_robot_lerobot_value_acp_template.sh
   真机 LeRobot 数据模板：不依赖 DexJoCo rollout，直接对已有 LeRobot 真机数据训练 value model 并写回 value / advantage / ACP indicator。
 ```
 
+## A-F 实验代码与配置
+
+这一组实验只对应 LeRobot 格式的 DexJoCo ReCap 闭环，核心执行脚本是：
+
+```text
+jobs/57_dexjoco_click_mouse_evorl_lerobot_ab.sh
+```
+
+A-E 都是围绕这个核心脚本写的 wrapper job。wrapper 只负责设置实验变量，然后 `exec` 到 `57_dexjoco_click_mouse_evorl_lerobot_ab.sh`。因此阅读 A-E 时，可以把 `57` 理解为公共训练/收集/评测主程序，把 `58/59/65/66/68` 理解为不同实验配置。
+
+公共配置如下：
+
+```text
+DEXJOCO_TASK=click_mouse
+DEXJOCO_EVO_ROUNDS=3
+DEXJOCO_EVO_COLLECT_EPISODES=100
+DEXJOCO_EVO_COLLECT_SHARD_EPISODES=25
+DEXJOCO_RECAP_TRAIN_STEPS=1200
+DEXJOCO_EVO_VALUE_STEPS=8000
+DEXJOCO_EVO_VALUE_BATCH_SIZE=16
+DEXJOCO_EVO_VALUE_DTYPE=bfloat16
+DEXJOCO_EVO_VALUE_CAMERA_FEATURES=[observation.images.ego_right,observation.images.wrist]
+DEXJOCO_EVO_N_STEP=50
+DEXJOCO_EVO_POSITIVE_RATIO=0.3
+DEXJOCO_EVO_INDICATOR_DROPOUT_PROB=0.3
+OPENPI_RECAP_LORA_ONLY=1
+```
+
+公共流程是：
+
+```text
+D0 LeRobot 数据
+  -> merge pool
+  -> train Pistar06 value
+  -> infer value / advantage / ACP indicator
+  -> train OpenPI policy
+  -> collect DexJoCo rollout
+  -> convert rollout to LeRobot
+  -> next round
+  -> final eval
+```
+
+### A: faithful positive-collect
+
+代码入口：
+
+```text
+jobs/58_dexjoco_click_mouse_evorl_lerobot_A_faithful.sh
+```
+
+核心配置：
+
+```bash
+DEXJOCO_EVO_LEROBOT_VARIANT=A_faithful_positive_collect
+DEXJOCO_EVO_COLLECT_PROMPT=positive
+DEXJOCO_EVO_TRAIN_ACP_ENABLE=1
+DEXJOCO_EVO_ACP_BINARIZATION=task_quantile
+DEXJOCO_EVO_SUCCESS_AWARE=false
+DEXJOCO_EVO_TAG_VALUES=negative,positive
+DEXJOCO_EVO_EVAL_PROMPT=positive
+DEXJOCO_EVAL_EPISODES=100
+OPENPI_RECAP_LORA_ONLY=1
+```
+
+含义：这是最接近 Evo-RL/ReCap positive prompt 设定的版本。收集 rollout 时使用带 `Advantage: positive` 的 prompt，policy training 时使用二值 ACP tag。
+
+### B: base-collect controlled
+
+代码入口：
+
+```text
+jobs/59_dexjoco_click_mouse_evorl_lerobot_B_base_collect.sh
+```
+
+核心配置：
+
+```bash
+DEXJOCO_EVO_LEROBOT_VARIANT=B_base_collect_controlled
+DEXJOCO_EVO_COLLECT_PROMPT=base
+DEXJOCO_EVO_TRAIN_ACP_ENABLE=1
+DEXJOCO_EVO_ACP_BINARIZATION=task_quantile
+DEXJOCO_EVO_SUCCESS_AWARE=false
+DEXJOCO_EVO_TAG_VALUES=negative,positive
+DEXJOCO_EVO_EVAL_PROMPT=positive
+DEXJOCO_EVAL_EPISODES=100
+OPENPI_RECAP_LORA_ONLY=1
+```
+
+含义：与 A 的训练路径保持一致，但收集新 rollout 时不再使用 positive prompt，而是使用原始 base task prompt。它用于分离“收集时 positive prompt”与“训练时 ACP prompt tag”的影响。
+
+### C: base-collect no-ACP train
+
+代码入口：
+
+```text
+jobs/65_dexjoco_click_mouse_evorl_lerobot_C_base_collect_no_acp.sh
+```
+
+核心配置：
+
+```bash
+DEXJOCO_EVO_LEROBOT_VARIANT=C_base_collect_no_acp_train
+DEXJOCO_EVO_COLLECT_PROMPT=base
+DEXJOCO_EVO_TRAIN_ACP_ENABLE=0
+DEXJOCO_EVO_ACP_BINARIZATION=task_quantile
+DEXJOCO_EVO_SUCCESS_AWARE=false
+DEXJOCO_EVO_EVAL_PROMPT=base
+DEXJOCO_EVAL_EPISODES=500
+OPENPI_RECAP_LORA_ONLY=1
+```
+
+含义：仍然训练 Pistar06 value model，也仍然推理 value、advantage 和 indicator，但 policy training 阶段关闭 ACP prompt tag。这个实验用于对比“只做数据池更新/value 标注”与“真正把 ACP tag 注入 policy training”的差异。
+
+### D: episode top-k smoothing
+
+代码入口：
+
+```text
+jobs/66_dexjoco_click_mouse_evorl_lerobot_D_episode_topk_smooth.sh
+```
+
+核心配置：
+
+```bash
+DEXJOCO_EVO_LEROBOT_VARIANT=D_episode_topk_smooth_successaware
+DEXJOCO_EVO_COLLECT_PROMPT=base
+DEXJOCO_EVO_TRAIN_ACP_ENABLE=1
+DEXJOCO_EVO_ACP_BINARIZATION=episode_topk_smooth
+DEXJOCO_EVO_MIN_POSITIVE_RUN_LENGTH=3
+DEXJOCO_EVO_SUCCESS_AWARE=true
+DEXJOCO_EVO_TAG_VALUES=negative,positive
+DEXJOCO_EVO_EVAL_PROMPT=base
+DEXJOCO_EVAL_EPISODES=500
+```
+
+含义：保留 B 的 base-prompt collection 和二值 ACP policy training，但把 indicator 生成方式从全任务 quantile 改成 episode 内 top-k smoothing，并启用 success-aware 处理。这个版本主要用于减少零散帧级 positive tag。
+
+### E: multi-tag episode smoothing
+
+代码入口：
+
+```text
+jobs/68_dexjoco_click_mouse_evorl_lerobot_E_multitag_episode_smooth.sh
+```
+
+核心配置：
+
+```bash
+DEXJOCO_EVO_LEROBOT_VARIANT=E_multitag_episode_smooth_successaware
+DEXJOCO_EVO_COLLECT_PROMPT=base
+DEXJOCO_EVO_TRAIN_ACP_ENABLE=1
+DEXJOCO_EVO_ACP_BINARIZATION=episode_multitag_smooth
+DEXJOCO_EVO_MULTITAG_RATIOS=0.1,0.2,0.3
+DEXJOCO_EVO_MIN_POSITIVE_RUN_LENGTH=3
+DEXJOCO_EVO_SUCCESS_AWARE=true
+DEXJOCO_EVO_TAG_KEY=Advantage
+DEXJOCO_EVO_TAG_VALUES=failure,low,medium,high
+DEXJOCO_EVO_EVAL_PROMPT=high
+DEXJOCO_EVAL_EPISODES=500
+```
+
+含义：把 D 的二值 `negative/positive` tag 扩展成 `failure/low/medium/high` 四档 tag。`DEXJOCO_EVO_MULTITAG_RATIOS=0.1,0.2,0.3` 表示按 advantage 排序后划出 high、medium、low 等级，评测默认使用 `Advantage: high` prompt。
+
+### F: 当前仓库状态
+
+当前公开仓库没有单独的 F wrapper job，也没有已经提交的 `F_*` 实验配置文件。因此 README 中不把 F 描述成已经完成的可运行实验。
+
+如果后续要补 F，建议延续 A-E 的写法，新建一个 wrapper，例如：
+
+```text
+jobs/69_dexjoco_click_mouse_evorl_lerobot_F_<name>.sh
+```
+
+并只在 wrapper 中设置 F 的差异变量，最后执行：
+
+```bash
+exec bash "$EXP_DIR/jobs/57_dexjoco_click_mouse_evorl_lerobot_ab.sh"
+```
+
+这样 F 会和 A-E 共用同一套训练、收集和评测主程序，差异也能集中体现在少量环境变量上。
+
+运行 A-E 时，可以把 `-Job` 换成对应 wrapper：
+
+```powershell
+.\scripts\run_remote_slurm.ps1 `
+  -ConfigPath configs\remote.env `
+  -LocalDexJoCoPath .local\dexjoco-src `
+  -Job jobs\58_dexjoco_click_mouse_evorl_lerobot_A_faithful.sh `
+  -RunName A_faithful_positive_collect `
+  -Time 24:00:00 `
+  -Memory 128G
+```
+
+将上面的 `-Job` 和 `-RunName` 替换为 B-E 对应脚本和实验名即可。
+
 ## DexJoCo 数据流
 
 紧凑的 rollout NPZ 文件可以转换成本地 LeRobot 数据集：
